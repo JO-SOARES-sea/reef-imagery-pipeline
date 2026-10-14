@@ -203,47 +203,66 @@ def scene_summary(item: Item) -> dict[str, Any]:
     }
 
 
+def _first_number(props: dict[str, Any], *keys: str) -> float | None:
+    """Return the first property among keys that holds a numeric value (catalogs may publish explicit nulls)."""
+    for key in keys:
+        value = props.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 def metadata_from_stac_item(item: Item) -> dict[str, Any]:
     """Extract a run_predictor-compatible metadata dict from a Sentinel-2 STAC item.
 
     This is the production replacement for compute_metadata_stub() in utils.py.
     All fields fall back to neutral defaults when the STAC catalog does not
-    expose the corresponding property (e.g., older Earth Search vs. PC schemas).
+    expose the corresponding property or publishes it as null.
 
-    Sentinel-2 STAC property mapping:
-        view:sun_elevation  → solar_zenith_deg  (= 90 − elevation)
-        view:sun_azimuth    → solar_azimuth_deg
+    Sentinel-2 STAC property mapping (Earth Search key first, Planetary Computer fallback):
+        view:sun_elevation / s2:mean_solar_zenith → solar_zenith_deg  (zenith = 90 − elevation)
+        view:sun_azimuth / s2:mean_solar_azimuth  → solar_azimuth_deg
         view:incidence_angle → satellite_zenith_deg
-        view:azimuth        → satellite_azimuth_deg
-        eo:cloud_cover      → cloud_cover_pct
-        proj:epsg           → crs  (as "EPSG:<code>")
-        s2:product_type or processing:level → level  (normalised to "L2A"/"L1C")
+        view:azimuth         → satellite_azimuth_deg
+        eo:cloud_cover       → cloud_cover_pct
+        proj:code / proj:epsg → crs  (as "EPSG:<code>")
+        s2:product_type / processing:level → level  (normalised to "L2A"/"L1C")
     """
     props = item.properties
 
-    sun_elev = props.get("view:sun_elevation")
-    solar_zenith = (90.0 - float(sun_elev)) if sun_elev is not None else 40.0
-    solar_azimuth = float(props.get("view:sun_azimuth", 150.0))
-    sat_zenith = float(props.get("view:incidence_angle", 5.0))
-    sat_azimuth = float(props.get("view:azimuth", 10.0))
-    cloud_cover = float(props.get("eo:cloud_cover", 2.0))
+    sun_elev = _first_number(props, "view:sun_elevation")
+    pc_zenith = _first_number(props, "s2:mean_solar_zenith")
+    if sun_elev is not None:
+        solar_zenith = 90.0 - sun_elev
+    elif pc_zenith is not None:
+        solar_zenith = pc_zenith
+    else:
+        solar_zenith = 40.0
+    solar_azimuth = _first_number(props, "view:sun_azimuth", "s2:mean_solar_azimuth")
+    sat_zenith = _first_number(props, "view:incidence_angle")
+    sat_azimuth = _first_number(props, "view:azimuth")
+    cloud_cover = _first_number(props, "eo:cloud_cover")
 
+    # Projection extension v2 replaced proj:epsg (int) with proj:code ("EPSG:32629"); Earth Search v1 uses the latter
     epsg = props.get("proj:epsg")
-    crs = f"EPSG:{epsg}" if epsg else "EPSG:32629"
+    crs = props.get("proj:code") or (f"EPSG:{epsg}" if epsg else "EPSG:32629")
 
-    # PC uses "s2:product_type" (e.g. "MSIL2A"); Earth Search uses "processing:level" (e.g. "L2A")
-    raw_level = props.get("s2:product_type") or props.get("processing:level", "L2A")
-    if raw_level and "L2A" in raw_level:
+    # PC: "MSIL2A"; Earth Search v1: "S2MSI2A"; generic: processing:level "L2A"
+    raw_level = str(props.get("s2:product_type") or props.get("processing:level") or "L2A").upper()
+    if raw_level.endswith("2A"):
         level = "L2A"
-    elif raw_level and "L1C" in raw_level:
+    elif raw_level.endswith("1C"):
         level = "L1C"
     else:
-        level = raw_level or "L2A"
+        level = raw_level
 
     if item.datetime is not None:
         date_str = item.datetime.strftime("%Y-%m-%d")
     else:
-        date_str = str(props.get("datetime", ""))[:10]
+        date_str = str(props.get("datetime") or "")[:10]
 
     return {
         "date": date_str,
@@ -251,8 +270,8 @@ def metadata_from_stac_item(item: Item) -> dict[str, Any]:
         "datum": "WGS84",
         "level": level,
         "solar_zenith_deg": round(solar_zenith, 3),
-        "solar_azimuth_deg": round(solar_azimuth, 3),
-        "satellite_zenith_deg": round(sat_zenith, 3),
-        "satellite_azimuth_deg": round(sat_azimuth, 3),
-        "cloud_cover_pct": round(cloud_cover, 3),
+        "solar_azimuth_deg": round(solar_azimuth if solar_azimuth is not None else 150.0, 3),
+        "satellite_zenith_deg": round(sat_zenith if sat_zenith is not None else 5.0, 3),
+        "satellite_azimuth_deg": round(sat_azimuth if sat_azimuth is not None else 10.0, 3),
+        "cloud_cover_pct": round(cloud_cover if cloud_cover is not None else 2.0, 3),
     }

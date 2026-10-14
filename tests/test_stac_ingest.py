@@ -1,4 +1,3 @@
-import math
 from datetime import datetime, timezone
 
 import pytest
@@ -163,6 +162,10 @@ class TestMetadataFromStacItem:
         assert m["crs"] == "EPSG:32629"
         assert m["datum"] == "WGS84"
 
+    def test_crs_from_proj_code(self):
+        props = {**self._FULL_PROPS, "proj:epsg": None, "proj:code": "EPSG:32630"}
+        assert stac_ingest.metadata_from_stac_item(RichDummyItem(props))["crs"] == "EPSG:32630"
+
     def test_level_normalised_msil2a(self):
         item = RichDummyItem({**self._FULL_PROPS, "s2:product_type": "MSIL2A"})
         assert stac_ingest.metadata_from_stac_item(item)["level"] == "L2A"
@@ -197,6 +200,40 @@ class TestMetadataFromStacItem:
         assert m["crs"] == "EPSG:32629"
         assert m["level"] == "L2A"
         assert m["cloud_cover_pct"] == pytest.approx(5.0)
+
+    def test_explicit_null_properties_fall_back_to_defaults(self):
+        props = {
+            "eo:cloud_cover": None,
+            "view:sun_elevation": None,
+            "view:sun_azimuth": None,
+            "view:incidence_angle": None,
+            "view:azimuth": None,
+            "proj:epsg": None,
+            "s2:product_type": None,
+            "datetime": None,
+        }
+        m = stac_ingest.metadata_from_stac_item(RichDummyItem(props))
+        assert m["solar_zenith_deg"] == pytest.approx(40.0)
+        assert m["solar_azimuth_deg"] == pytest.approx(150.0)
+        assert m["cloud_cover_pct"] == pytest.approx(2.0)
+        assert m["crs"] == "EPSG:32629"
+        assert m["level"] == "L2A"
+        assert m["date"] == ""
+
+    def test_earth_search_v1_product_type_normalised(self):
+        item = RichDummyItem({**self._FULL_PROPS, "s2:product_type": "S2MSI2A"})
+        assert stac_ingest.metadata_from_stac_item(item)["level"] == "L2A"
+
+    def test_planetary_computer_solar_angle_keys(self):
+        props = {"eo:cloud_cover": 3.0, "s2:mean_solar_zenith": 42.413, "s2:mean_solar_azimuth": 160.459}
+        m = stac_ingest.metadata_from_stac_item(RichDummyItem(props))
+        assert m["solar_zenith_deg"] == pytest.approx(42.413)
+        assert m["solar_azimuth_deg"] == pytest.approx(160.459)
+
+    def test_view_sun_elevation_preferred_over_pc_zenith(self):
+        props = {"view:sun_elevation": 50.0, "s2:mean_solar_zenith": 10.0}
+        m = stac_ingest.metadata_from_stac_item(RichDummyItem(props))
+        assert m["solar_zenith_deg"] == pytest.approx(40.0)
 
     def test_output_values_are_rounded_floats(self):
         item = RichDummyItem(self._FULL_PROPS)
