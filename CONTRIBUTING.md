@@ -1,7 +1,7 @@
 # Contributing to Reef Imagery Pipeline
 
 ## Code Style
-- Use Python 3.10+
+- Use Python 3.11+ (required by the `scikit-learn==1.8.0` pin)
 - Follow PEP 8 conventions
 - Use type hints where possible
 - Maximum line length: 120 characters

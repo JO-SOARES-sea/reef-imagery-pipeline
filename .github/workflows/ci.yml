@@ -156,4 +156,4 @@ jobs:
         echo "✓ Phase 3-5: GLO-30 DEM fallback, terrain BVI integration" >> $GITHUB_STEP_SUMMARY
         echo "✓ Code quality checks completed" >> $GITHUB_STEP_SUMMARY
         echo "✓ Security scan completed" >> $GITHUB_STEP_SUMMARY
-        echo "✓ Build verified on Python 3.10/3.11/3.12" >> $GITHUB_STEP_SUMMARY
+        echo "✓ Build verified on Python 3.11/3.12" >> $GITHUB_STEP_SUMMARY

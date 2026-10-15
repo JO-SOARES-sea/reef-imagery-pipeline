@@ -6,6 +6,7 @@ Sentinel-2 scene discovery, asset extraction, and cloud-filtered scene ranking.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 import planetary_computer as pc
 from pystac import Item
 from pystac_client import Client
+
+logger = logging.getLogger(__name__)
 
 PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 EARTH_SEARCH_STAC_URL = "https://earth-search.aws.element84.com/v1"
@@ -200,4 +203,98 @@ def scene_summary(item: Item) -> dict[str, Any]:
         "platform": item.properties.get("platform"),
         "collection": item.collection_id,
         "assets": sorted(item.assets.keys()),
+    }
+
+
+def _first_number(props: dict[str, Any], *keys: str) -> float | None:
+    """Return the first property among keys that holds a numeric value (catalogs may publish explicit nulls)."""
+    for key in keys:
+        value = props.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def metadata_from_stac_item(item: Item) -> dict[str, Any]:
+    """Extract a run_predictor-compatible metadata dict from a Sentinel-2 STAC item.
+
+    This is the production replacement for compute_metadata_stub() in utils.py.
+    All fields fall back to neutral defaults when the STAC catalog does not
+    expose the corresponding property or publishes it as null.
+
+    Sentinel-2 STAC property mapping (Earth Search key first, Planetary Computer fallback):
+        view:sun_elevation / s2:mean_solar_zenith → solar_zenith_deg  (zenith = 90 − elevation)
+        view:sun_azimuth / s2:mean_solar_azimuth  → solar_azimuth_deg
+        view:incidence_angle → satellite_zenith_deg
+        view:azimuth         → satellite_azimuth_deg
+        eo:cloud_cover       → cloud_cover_pct
+        proj:code / proj:epsg → crs  (as "EPSG:<code>")
+        s2:product_type / processing:level → level  (normalised to "L2A"/"L1C")
+    """
+    props = item.properties
+
+    sun_elev = _first_number(props, "view:sun_elevation")
+    pc_zenith = _first_number(props, "s2:mean_solar_zenith")
+    if sun_elev is not None:
+        solar_zenith = 90.0 - sun_elev
+    elif pc_zenith is not None:
+        solar_zenith = pc_zenith
+    else:
+        solar_zenith = 40.0
+    solar_azimuth = _first_number(props, "view:sun_azimuth", "s2:mean_solar_azimuth")
+    sat_zenith = _first_number(props, "view:incidence_angle")
+    sat_azimuth = _first_number(props, "view:azimuth")
+    cloud_cover = _first_number(props, "eo:cloud_cover")
+
+    # Projection extension v2 replaced proj:epsg (int) with proj:code ("EPSG:32629"); Earth Search v1 uses the latter
+    epsg = props.get("proj:epsg")
+    crs = props.get("proj:code") or (f"EPSG:{epsg}" if epsg else "EPSG:32629")
+
+    # PC: "MSIL2A"; Earth Search v1: "S2MSI2A"; generic: processing:level "L2A"
+    raw_level = str(props.get("s2:product_type") or props.get("processing:level") or "L2A").upper()
+    if raw_level.endswith("2A"):
+        level = "L2A"
+    elif raw_level.endswith("1C"):
+        level = "L1C"
+    else:
+        level = raw_level
+
+    # Defaults keep run_predictor() working, but a solar zenith or cloud cover that was never measured
+    # must not pass silently: the zenith feeds the Kd inversion and Snell refraction.
+    defaulted = [
+        name
+        for name, value in (
+            ("solar_zenith_deg", sun_elev if sun_elev is not None else pc_zenith),
+            ("solar_azimuth_deg", solar_azimuth),
+            ("satellite_zenith_deg", sat_zenith),
+            ("satellite_azimuth_deg", sat_azimuth),
+            ("cloud_cover_pct", cloud_cover),
+        )
+        if value is None
+    ]
+    if defaulted:
+        logger.warning(
+            "STAC item %s has no value for %s; using neutral defaults",
+            getattr(item, "id", "?"),
+            ", ".join(defaulted),
+        )
+
+    if item.datetime is not None:
+        date_str = item.datetime.strftime("%Y-%m-%d")
+    else:
+        date_str = str(props.get("datetime") or "")[:10]
+
+    return {
+        "date": date_str,
+        "crs": crs,
+        "datum": "WGS84",
+        "level": level,
+        "solar_zenith_deg": round(solar_zenith, 3),
+        "solar_azimuth_deg": round(solar_azimuth if solar_azimuth is not None else 150.0, 3),
+        "satellite_zenith_deg": round(sat_zenith if sat_zenith is not None else 5.0, 3),
+        "satellite_azimuth_deg": round(sat_azimuth if sat_azimuth is not None else 10.0, 3),
+        "cloud_cover_pct": round(cloud_cover if cloud_cover is not None else 2.0, 3),
     }

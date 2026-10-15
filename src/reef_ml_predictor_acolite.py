@@ -772,19 +772,44 @@ if __name__ == "__main__":
     p.add_argument("--output", required=True)
     p.add_argument("--depth", type=float, default=16.0)
     p.add_argument("--snr-threshold", type=float, default=3.0)
+    p.add_argument("--lat", type=float, default=None, help="Scene point latitude (enables STAC metadata + bathy features)")
+    p.add_argument("--lon", type=float, default=None, help="Scene point longitude (enables STAC metadata + bathy features)")
     p.add_argument(
         "--with-bathy-features", action="store_true", help="Compute IH/DGRM bathymetry-derived features (requires lat/lon)"
     )
     args = p.parse_args()
+    if (args.lat is None) != (args.lon is None):
+        p.error("--lat and --lon must be given together")
+
     from src.utils import compute_metadata_stub
+
+    metadata = None
+    if args.lat is not None:
+        try:
+            from src.stac_ingest import choose_least_cloudy, metadata_from_stac_item, search_sentinel2_scenes
+
+            scenes = search_sentinel2_scenes(
+                args.lat, args.lon, f"{args.date}T00:00:00Z/{args.date}T23:59:59Z", max_cloud_cover=100.0
+            )
+            best = choose_least_cloudy(scenes)
+            if best is not None:
+                metadata = metadata_from_stac_item(best)
+                logging.info("Scene metadata from STAC item %s", best.id)
+        except Exception as stac_err:
+            logging.warning("STAC metadata lookup failed: %s", stac_err)
+    if metadata is None:
+        logging.warning("Using compute_metadata_stub() — solar geometry and cloud cover are approximate")
+        metadata = compute_metadata_stub(args.date)
 
     run_predictor(
         args.boa_b02,
-        compute_metadata_stub(args.date),
+        metadata,
         args.output,
         date=args.date,
         b03_path=args.b03,
         b04_path=args.b04,
+        lat=args.lat,
+        lon=args.lon,
         snr_threshold=args.snr_threshold,
         depth_target=args.depth,
         with_bathy_features=args.with_bathy_features,
