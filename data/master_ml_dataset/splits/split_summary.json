@@ -1,0 +1,35 @@
+{
+  "created_utc": "2026-06-28T01:50:08.642549+00:00",
+  "seed": 42,
+  "ratios": {
+    "train": 0.7,
+    "val": 0.15,
+    "test": 0.15
+  },
+  "drop_empty_masks": false,
+  "drop_nan_images": false,
+  "totals": {
+    "n": 341,
+    "reef_pixels": 66694,
+    "total_pixels": 5586944,
+    "mean_reef_ratio": 0.011937474225623168
+  },
+  "train": {
+    "n": 239,
+    "reef_pixels": 33754,
+    "total_pixels": 3915776,
+    "mean_reef_ratio": 0.008620002778504185
+  },
+  "val": {
+    "n": 51,
+    "reef_pixels": 24491,
+    "total_pixels": 835584,
+    "mean_reef_ratio": 0.029310039445465685
+  },
+  "test": {
+    "n": 51,
+    "reef_pixels": 8449,
+    "total_pixels": 835584,
+    "mean_reef_ratio": 0.010111490885416666
+  }
+}

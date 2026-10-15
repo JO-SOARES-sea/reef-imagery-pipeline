@@ -81,6 +81,12 @@ tmp/
 batch_report.json
 s1_roughness_report_2025.json
 
+# Training dataset — patches are .tif (normally ignored) but these are the ML ground truth
+!data/master_ml_dataset/
+!data/master_ml_dataset/**
+# The zipped version for VM deployment (*.zip normally ignored)
+!data/master_ml_dataset.zip
+
 # Local / auto-generated CSV exports (keep data/ CSVs tracked explicitly)
 local_*.csv
 *.coverage
