@@ -10,6 +10,8 @@ Outputs:
   - Metadata JSON with crs, bounds, resolution, source info
 """
 
+from __future__ import annotations
+
 import contextlib
 import json
 import logging
@@ -19,8 +21,14 @@ from pathlib import Path
 
 import numpy as np
 import requests
-import rioxarray as rxr
-import xarray as xr
+
+try:
+    import rioxarray as rxr
+    import xarray as xr
+
+    HAS_XARRAY = True
+except ImportError:
+    HAS_XARRAY = False
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +63,11 @@ class DGTSentinelIntegrator:
             output_dir: where to save tiles and mosaics
             mdt_nodata: nodata value for MDT-50cm
         """
+        if not HAS_XARRAY:
+            raise ImportError(
+                "rioxarray/xarray are required for DGTSentinelIntegrator. Install with: pip install rioxarray xarray"
+            )
+
         self.bbox = bbox
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +321,7 @@ class DGTSentinelIntegrator:
             img = request.get_data()
             logger.info(f"Downloaded Sentinel-2 image: shape {img[0].shape}")
 
+            from rasterio.io import MemoryFile
             from rasterio.transform import from_bounds as _from_bounds
 
             arr = img[0].astype("float32")  # (H, W, nbands)

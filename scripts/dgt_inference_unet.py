@@ -33,8 +33,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ── Path setup (DGT JupyterHub) ───────────────────────────────────────────────
-WORK = Path('/home/jovyan/reef-imagery-pipeline')
+# ── Path setup ────────────────────────────────────────────────────────────────
+# Repo root: auto-detect from this file's location so the script runs wherever
+# the repo is cloned. Override with REEF_PIPELINE_ROOT if needed.
+_env_root = os.environ.get("REEF_PIPELINE_ROOT")
+WORK = Path(_env_root) if _env_root else Path(__file__).resolve().parents[1]
 if WORK.exists():
     sys.path.insert(0, str(WORK))
 

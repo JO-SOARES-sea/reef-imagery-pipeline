@@ -11,11 +11,17 @@ It relies on the currently generated rule-based reef polygons to bootstrap the d
 import logging
 import os
 
-import geopandas as gpd
 import numpy as np
 import rasterio
 from rasterio.features import rasterize
 from rasterio.windows import Window
+
+try:
+    import geopandas as gpd
+
+    HAS_GEOPANDAS = True
+except ImportError:
+    HAS_GEOPANDAS = False
 
 log = logging.getLogger(__name__)
 
@@ -42,6 +48,10 @@ def build_ml_dataset(
 
     if not os.path.exists(candidates_geojson):
         log.error("ML Dataset: Labels GeoJSON not found: %s", candidates_geojson)
+        return False
+
+    if not HAS_GEOPANDAS:
+        log.error("ML Dataset: geopandas not installed; cannot load candidate polygons")
         return False
 
     images_dir = os.path.join(output_dir, "ml_dataset", "images")

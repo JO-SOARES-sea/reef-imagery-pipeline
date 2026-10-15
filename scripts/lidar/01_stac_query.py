@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import List, Dict
@@ -25,7 +26,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-WORK = Path('/home/jovyan/reef-imagery-pipeline')
+# Repo root: auto-detect from this file's location so the script runs wherever
+# the repo is cloned. Override with REEF_PIPELINE_ROOT if needed.
+_env_root = os.environ.get("REEF_PIPELINE_ROOT")
+WORK = Path(_env_root) if _env_root else Path(__file__).resolve().parents[2]
 if WORK.exists():
     sys.path.insert(0, str(WORK))
 

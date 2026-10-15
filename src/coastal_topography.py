@@ -41,11 +41,17 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import requests
 from shapely.geometry import Point
+
+try:
+    import geopandas as gpd
+
+    HAS_GEOPANDAS = True
+except ImportError:
+    HAS_GEOPANDAS = False
 
 try:
     import rasterio
@@ -902,6 +908,11 @@ class CoastalTopographyAnalyzer:
             if slope_path is None or aspect_path is None:
                 return None
 
+        if not HAS_GEOPANDAS:
+            logger.error("geopandas not installed; cannot extract site features")
+            logger.info("Install with: pip install geopandas")
+            return None
+
         logger.info(f"Extracting features for {len(sites)} sites with buffer={buffer_m}m...")
 
         # Convert sites to GeoDataFrame
@@ -996,7 +1007,13 @@ class CoastalTopographyAnalyzer:
             json.dump(features_df.to_dict(orient="records"), f, indent=2, default=str)
         logger.info(f"Saved JSON: {json_path}")
 
+        saved = {"csv": str(csv_path), "json": str(json_path)}
+
         # GeoJSON (if geometry available)
+        if not HAS_GEOPANDAS:
+            logger.warning("geopandas not installed; skipping GeoJSON export")
+            return saved
+
         if "geometry" not in features_df.columns:
             gdf = gpd.GeoDataFrame(
                 features_df, geometry=gpd.points_from_xy(features_df["longitude"], features_df["latitude"]), crs=self.WGS84_CRS
@@ -1007,11 +1024,8 @@ class CoastalTopographyAnalyzer:
         gdf.to_file(geojson_path, driver="GeoJSON")
         logger.info(f"Saved GeoJSON: {geojson_path}")
 
-        return {
-            "csv": str(csv_path),
-            "json": str(json_path),
-            "geojson": str(geojson_path),
-        }
+        saved["geojson"] = str(geojson_path)
+        return saved
 
     def run_analysis(
         self,

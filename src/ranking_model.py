@@ -357,7 +357,10 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
             score = float(_RANKER_MODEL.predict(feature_df)[0])
 
             if _observe_drift is not None:
-                _observe_drift(standard_features, score, _FEATURE_SCHEMA)
+                try:
+                    _observe_drift(standard_features, score, _FEATURE_SCHEMA)
+                except Exception as drift_exc:
+                    log.warning(f"Drift observation failed (non-blocking): {drift_exc}")
             result = {"score": score, "mode": "ML", "features_used": standard_features}
             if terrain_features:
                 _sm = terrain_features.get("slope_mean", 0.0)
@@ -403,7 +406,10 @@ def predict_score(features_dict, terrain_features=None, bathy_features=None):
         score *= 0.1
 
     if _observe_drift is not None:
-        _observe_drift(standard_features, float(score), _FEATURE_SCHEMA)
+        try:
+            _observe_drift(standard_features, float(score), _FEATURE_SCHEMA)
+        except Exception as drift_exc:
+            log.warning(f"Drift observation failed (non-blocking): {drift_exc}")
     result = {
         "score": float(score),
         "mode": "Fallback",

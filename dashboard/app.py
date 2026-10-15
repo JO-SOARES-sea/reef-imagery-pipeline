@@ -336,11 +336,14 @@ def get_depth_soundings():
     from pyproj import Transformer
 
     bounds_str = request.args.get('bounds', '')
-    n = min(int(request.args.get('n', 50)), 200)
 
     if not bounds_str:
         return jsonify({"status": "error", "message": "boundsRequired"}), 400
-    parts = [float(x) for x in bounds_str.split(',')]
+    try:
+        n = min(int(request.args.get('n', 50)), 200)
+        parts = [float(x) for x in bounds_str.split(',')]
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid n or bounds parameter"}), 400
     if len(parts) != 4:
         return jsonify({"status": "error", "message": "bounds needs 4 floats"}), 400
     min_lon, min_lat, max_lon, max_lat = parts
@@ -825,8 +828,12 @@ def wms_proxy():
     bbox_raw = request.args.get("BBOX", request.args.get("bbox", ""))
     try:
         parts = [float(x) for x in bbox_raw.split(",")]
+        width  = int(request.args.get("WIDTH",  request.args.get("width",  256)))
+        height = int(request.args.get("HEIGHT", request.args.get("height", 256)))
     except (ValueError, AttributeError):
-        return Response("Invalid or missing BBOX", status=400)
+        return Response("Invalid or missing BBOX/WIDTH/HEIGHT", status=400)
+    if len(parts) != 4:
+        return Response("BBOX needs 4 comma-separated values", status=400)
 
     crs = request.args.get("CRS", request.args.get("SRS", "EPSG:4326")).upper()
     if crs in ("EPSG:4326",) and abs(parts[0]) <= 90:
@@ -835,8 +842,6 @@ def wms_proxy():
     else:
         lon_min, lat_min, lon_max, lat_max = parts
 
-    width  = int(request.args.get("WIDTH",  request.args.get("width",  256)))
-    height = int(request.args.get("HEIGHT", request.args.get("height", 256)))
     width, height = min(width, 2048), min(height, 2048)
 
     # TIME: "YYYY-MM-DD/YYYY-MM-DD" or single date (→ ±15 day window)
