@@ -16,7 +16,7 @@ import pandas as pd
 import planetary_computer as pc
 from pystac_client import Client
 
-from src.constants import KD490_TABLE
+from src.constants import GLINT_PENALTY, GLINT_PENALTY_DEFAULT, KD490_TABLE
 from src.ranking_model import predict_score
 from src.utils import get_kd490
 
@@ -47,13 +47,7 @@ def extract_features_from_stac(row, depth):
     if sza_air >= 90:
         sza_air = 89.9
 
-    glint_penalty = 1.0
-    if sza_air < 30:
-        glint_penalty *= 0.5  # Sol a pino
-    if month == 10:
-        glint_penalty *= 0.60
-    elif month == 9:
-        glint_penalty *= 0.95
+    glint_penalty = GLINT_PENALTY.get(month, GLINT_PENALTY_DEFAULT)
 
     # Refração na água (SZA_underwater)
     sin_sza_water = math.sin(math.radians(sza_air)) / N_WATER

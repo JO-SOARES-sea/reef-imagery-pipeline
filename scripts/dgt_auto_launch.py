@@ -13,12 +13,16 @@ Log: /home/jovyan/reef-imagery-pipeline/watcher.log
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-WORK   = Path('/home/jovyan/reef-imagery-pipeline')
+# Repo root: auto-detect from this file's location so the script runs wherever
+# the repo is cloned. Override with REEF_PIPELINE_ROOT if needed.
+_env_root = os.environ.get("REEF_PIPELINE_ROOT")
+WORK   = Path(_env_root) if _env_root else Path(__file__).resolve().parents[1]
 OUT    = Path('/home/jovyan/reef_output')
 LOG    = WORK / 'watcher.log'
 
