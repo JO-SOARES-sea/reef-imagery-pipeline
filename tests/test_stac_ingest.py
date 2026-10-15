@@ -201,6 +201,19 @@ class TestMetadataFromStacItem:
         assert m["level"] == "L2A"
         assert m["cloud_cover_pct"] == pytest.approx(5.0)
 
+    def test_defaulted_fields_are_logged(self, caplog):
+        """A neutral default must never pass silently (the zenith feeds the Kd inversion)."""
+        with caplog.at_level("WARNING", logger="src.stac_ingest"):
+            stac_ingest.metadata_from_stac_item(RichDummyItem({"eo:cloud_cover": 5.0}))
+        msg = " ".join(r.getMessage() for r in caplog.records)
+        assert "solar_zenith_deg" in msg and "satellite_zenith_deg" in msg
+        assert "cloud_cover_pct" not in msg
+
+    def test_complete_item_logs_no_default_warning(self, caplog):
+        with caplog.at_level("WARNING", logger="src.stac_ingest"):
+            stac_ingest.metadata_from_stac_item(RichDummyItem(self._FULL_PROPS))
+        assert not [r for r in caplog.records if "neutral defaults" in r.getMessage()]
+
     def test_explicit_null_properties_fall_back_to_defaults(self):
         props = {
             "eo:cloud_cover": None,

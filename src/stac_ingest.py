@@ -6,6 +6,7 @@ Sentinel-2 scene discovery, asset extraction, and cloud-filtered scene ranking.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 import planetary_computer as pc
 from pystac import Item
 from pystac_client import Client
+
+logger = logging.getLogger(__name__)
 
 PC_STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 EARTH_SEARCH_STAC_URL = "https://earth-search.aws.element84.com/v1"
@@ -258,6 +261,26 @@ def metadata_from_stac_item(item: Item) -> dict[str, Any]:
         level = "L1C"
     else:
         level = raw_level
+
+    # Defaults keep run_predictor() working, but a solar zenith or cloud cover that was never measured
+    # must not pass silently: the zenith feeds the Kd inversion and Snell refraction.
+    defaulted = [
+        name
+        for name, value in (
+            ("solar_zenith_deg", sun_elev if sun_elev is not None else pc_zenith),
+            ("solar_azimuth_deg", solar_azimuth),
+            ("satellite_zenith_deg", sat_zenith),
+            ("satellite_azimuth_deg", sat_azimuth),
+            ("cloud_cover_pct", cloud_cover),
+        )
+        if value is None
+    ]
+    if defaulted:
+        logger.warning(
+            "STAC item %s has no value for %s; using neutral defaults",
+            getattr(item, "id", "?"),
+            ", ".join(defaulted),
+        )
 
     if item.datetime is not None:
         date_str = item.datetime.strftime("%Y-%m-%d")
