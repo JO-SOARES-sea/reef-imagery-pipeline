@@ -5,8 +5,14 @@ Download ALL Sentinel-2 L2A bands useful for reef/bathymetry detection
 Uses Microsoft Planetary Computer STAC (zero-auth) to:
   - Search for S2 L2A scene at a given point/date
   - Download 11 bands (B01-B12, B8A) clipped to AOI bbox
-  - Resample 20m/60m bands to 10m grid (bilinear)
-  - Save each band as GeoTIFF + metadata JSON
+  - Read the 10 m bands on their NATIVE grid (integer window, exact affine transform)
+  - Resample 20m/60m bands onto that exact 10 m reference grid (bilinear for reflectance DN,
+    nearest for categorical layers such as SCL; nodata excluded from interpolation)
+  - Save each band as GeoTIFF (stored L2A DN — NO reflectance conversion) + metadata JSON
+    recording product provenance and the per-band radiometry decision
+    (see src/s2_radiometry.py; Planetary Computer assets carry no scale/offset, so they are
+    radiometry_unknown unless the product's MTD_MSIL2A.xml BOA_ADD_OFFSET can be read)
+  - Refuse to overwrite existing files (use --overwrite explicitly)
 
 Usage:
   python download_multiband_s2.py --lat 37.068978 --lon -8.210328 --date 2024-10-15
@@ -26,9 +32,22 @@ from datetime import datetime, timezone
 import numpy as np
 import rasterio
 from rasterio.warp import reproject, Resampling
-from rasterio.transform import from_bounds
+from rasterio.windows import transform as window_transform
 from pystac_client import Client
 import planetary_computer as pc
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from src.s2_grid import bbox_window, unsigned_href  # noqa: E402
+from src.s2_radiometry import (  # noqa: E402
+    radiometry_from_product_metadata,
+    radiometry_from_stac_asset,
+)
+
+# ESA physical band index used in MTD_MSIL2A.xml BOA_ADD_OFFSET band_id
+ESA_BAND_ID = {"B01": 0, "B02": 1, "B03": 2, "B04": 3, "B05": 4, "B06": 5, "B07": 6,
+               "B08": 7, "B8A": 8, "B09": 9, "B10": 10, "B11": 11, "B12": 12}
+# Layers that must never be interpolated as continuous variables
+CATEGORICAL_LAYERS = {"SCL"}
 
 log = logging.getLogger("download_multiband_s2")
 
@@ -74,88 +93,64 @@ def deg_offset(buffer_m: float) -> float:
     return buffer_m / 111_320.0
 
 
-def read_cog_window(href: str, bbox_wgs84: tuple, target_shape: tuple = None,
-                    target_transform: rasterio.Affine = None,
-                    target_crs=None, resampling=Resampling.bilinear) -> tuple:
-    """Read a COG window for a given bbox. Returns (data_2d, transform, crs, profile)."""
-    west, south, east, north = bbox_wgs84
+def read_native_window(href: str, bbox_wgs84: tuple) -> tuple:
+    """Read *href* over *bbox_wgs84* on its native grid. Returns (data, transform, crs, nodata)."""
     with rasterio.open(href) as src:
-        src_crs = src.crs
-        read_west, read_south, read_east, read_north = west, south, east, north
-        if src_crs and src_crs.to_epsg() != 4326:
-            from rasterio.warp import transform_bounds
-            read_west, read_south, read_east, read_north = transform_bounds(
-                "EPSG:4326", src_crs, west, south, east, north
-            )
-        window = rasterio.windows.from_bounds(
-            read_west, read_south, read_east, read_north, transform=src.transform
-        )
-        data = src.read(1, window=window, boundless=True, fill_value=0)
-        transform = src.window_transform(window)
-        profile = src.profile.copy()
-        profile.update(
-            height=data.shape[0],
-            width=data.shape[1],
-            transform=transform,
-            driver="GTiff",
-            compress="lzw",
-            count=1,
-        )
-        return data, transform, src_crs, profile
+        window = bbox_window(src, bbox_wgs84)
+        data = src.read(1, window=window)
+        return data, window_transform(window, src.transform), src.crs, src.nodata
 
 
-def resample_to_10m(data: np.ndarray, src_transform: rasterio.Affine,
-                    src_crs, src_dtype, bbox_wgs84: tuple,
-                    target_res: float = 10.0,
-                    resampling=Resampling.bilinear) -> tuple:
-    """Resample a band array to a 10m target grid using bilinear interpolation.
+def resampling_for(band_name: str):
+    """Nearest for categorical layers; bilinear for continuous reflectance DN."""
+    return Resampling.nearest if band_name in CATEGORICAL_LAYERS else Resampling.bilinear
 
-    Returns (data_10m, target_transform, target_shape).
+
+def resample_to_grid(data: np.ndarray, src_transform, src_crs, src_nodata,
+                     dst_transform, dst_crs, dst_shape: tuple, resampling) -> np.ndarray:
     """
-    west, south, east, north = bbox_wgs84
-
-    if src_crs and src_crs.to_epsg() == 32629:
-        from rasterio.warp import transform_bounds
-        west_t, south_t, east_t, north_t = transform_bounds(
-            "EPSG:4326", src_crs, west, south, east, north
-        )
-        target_crs = src_crs
-    else:
-        target_crs = src_crs
-        west_t, south_t, east_t, north_t = west, south, east, north
-        if src_crs and src_crs.to_epsg() != 4326:
-            from rasterio.warp import transform_bounds
-            west_t, south_t, east_t, north_t = transform_bounds(
-                "EPSG:4326", src_crs, west, south, east, north
-            )
-
-    width = max(1, int(round((east_t - west_t) / target_res)))
-    height = max(1, int(round((north_t - south_t) / target_res)))
-    target_transform = from_bounds(west_t, south_t, east_t, north_t, width, height)
-
-    destination = np.zeros((height, width), dtype=np.float32)
-
+    Reproject *data* onto an EXACT reference grid. Source nodata is excluded from the
+    interpolation kernel; destination cells with no valid source stay nodata.
+    """
+    nodata = 0 if src_nodata is None else src_nodata
+    dst = np.full(dst_shape, nodata, dtype=np.float32)
     reproject(
-        source=data.astype(np.float32),
-        destination=destination,
-        src_transform=src_transform,
-        src_crs=src_crs,
-        src_nodata=0,
-        dst_transform=target_transform,
-        dst_crs=target_crs,
-        dst_nodata=0,
+        source=data.astype(np.float32), destination=dst,
+        src_transform=src_transform, src_crs=src_crs, src_nodata=nodata,
+        dst_transform=dst_transform, dst_crs=dst_crs, dst_nodata=nodata,
         resampling=resampling,
     )
+    return dst
 
-    return destination, target_transform, (height, width)
+
+def product_radiometry(item, band_name: str, asset) -> dict:
+    """Per-band radiometry decision from asset metadata, else from MTD_MSIL2A.xml if readable."""
+    rad = radiometry_from_stac_asset(asset.to_dict(), item.properties)
+    if rad.is_known:
+        return rad.as_dict()
+    mtd = item.assets.get("product-metadata")
+    if mtd is not None and band_name in ESA_BAND_ID:
+        try:
+            import requests
+            r = requests.get(mtd.href, timeout=60)
+            r.raise_for_status()
+            return radiometry_from_product_metadata(r.text, ESA_BAND_ID[band_name]).as_dict()
+        except Exception as exc:  # network/parse failure → stays unknown
+            d = rad.as_dict()
+            d["evidence"].append(f"MTD_MSIL2A.xml unreadable: {exc}")
+            return d
+    return rad.as_dict()
 
 
 def download_multiband(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON,
                        date: str = DEFAULT_DATE, buffer_m: float = DEFAULT_BUFFER_M,
-                       output_dir: str = DEFAULT_OUTPUT_DIR) -> dict:
+                       output_dir: str = DEFAULT_OUTPUT_DIR, overwrite: bool = False) -> dict:
     """Download all reef-relevant S2 L2A bands to output_dir.
 
-    Returns dict with keys: scene_id, bands (dict of band->filepath), meta_path.
+    Every band is written on ONE reference grid: the native 10 m grid of B02 over the bbox.
+    Values are stored L2A DN (nodata=0); no reflectance conversion is applied here.
+
+    Returns dict with keys: scene_id, bands (dict of band->filepath), meta_path, radiometry.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -176,6 +171,8 @@ def download_multiband(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON,
     if not items:
         log.error("No S2 L2A scene found for %s at (%.5f, %.5f)", date, lat, lon)
         return {}
+    if len(items) > 1:
+        log.warning("  %d items match; using %s — record kept in metadata", len(items), items[0].id)
 
     item = items[0]
     scene_id = item.id
@@ -184,73 +181,89 @@ def download_multiband(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON,
     date_str = date.replace("-", "")
     band_files = {}
     band_info = {}
+    radiometry = {}
+
+    # Reference grid = native 10 m grid of B02 over the bbox
+    ref_asset = item.assets.get("B02")
+    if ref_asset is None:
+        log.error("Reference band B02 missing — cannot define the 10 m grid; aborting")
+        return {}
+    _ref, ref_transform, ref_crs, _ = read_native_window(ref_asset.href, bbox_wgs84)
+    ref_shape = _ref.shape
 
     for band_name, band_meta in REEF_BANDS.items():
-        asset_key = band_name
-        asset = item.assets.get(asset_key)
+        asset = item.assets.get(band_name)
         if not asset:
-            log.warning("  Asset %s not found in scene, skipping", band_name)
+            log.warning("  Asset %s not found in scene — not downloaded, not substituted", band_name)
+            band_info[band_name] = {"status": "missing_asset"}
             continue
 
         out_path = os.path.join(output_dir, f"S2_{band_name}_{date_str}.tif")
+        if os.path.exists(out_path) and not overwrite:
+            raise FileExistsError(f"{out_path} exists — refusing to overwrite (pass overwrite=True)")
         native_res = band_meta["res_m"]
+        radiometry[band_name] = product_radiometry(item, band_name, asset)
 
         log.info("  Downloading %s (%s, %s, %d m) ...",
                  band_name, band_meta["desc"], band_meta["wl"], native_res)
 
         try:
-            href = asset.href
-
-            if native_res == 10:
-                data, transform, crs, profile = read_cog_window(
-                    href, bbox_wgs84
-                )
+            raw, raw_transform, raw_crs, raw_nodata = read_native_window(asset.href, bbox_wgs84)
+            same_grid = (raw_crs == ref_crs and raw_transform.almost_equals(ref_transform)
+                         and raw.shape == ref_shape)
+            if same_grid:
+                data, resampled, method = raw, False, None
             else:
-                raw_data, raw_transform, raw_crs, raw_profile = read_cog_window(
-                    href, bbox_wgs84
-                )
-                data, transform, (h, w) = resample_to_10m(
-                    raw_data, raw_transform, raw_crs,
-                    raw_profile.get("dtype", "uint16"),
-                    bbox_wgs84, target_res=10.0
-                )
-                profile = raw_profile.copy()
-                profile.update(height=h, width=w, transform=transform)
+                method = resampling_for(band_name)
+                data = resample_to_grid(raw, raw_transform, raw_crs, raw_nodata,
+                                        ref_transform, ref_crs, ref_shape, method)
+                resampled = True
 
-            profile.update(
-                driver="GTiff",
-                compress="lzw",
-                count=1,
-                dtype=data.dtype,
-                nodata=0,
-            )
-
+            profile = {
+                "driver": "GTiff", "compress": "lzw", "count": 1,
+                "height": ref_shape[0], "width": ref_shape[1],
+                "crs": ref_crs, "transform": ref_transform,
+                "dtype": str(data.dtype), "nodata": 0 if raw_nodata is None else raw_nodata,
+            }
             with rasterio.open(out_path, "w", **profile) as dst:
                 dst.write(data, 1)
+                dst.update_tags(1, values="L2A stored DN (no reflectance conversion applied)",
+                                radiometry_status=radiometry[band_name]["status"],
+                                source_href=unsigned_href(asset.href))
 
             file_size = os.path.getsize(out_path)
             band_files[band_name] = out_path
             band_info[band_name] = {
+                "status": "ok",
                 "description": band_meta["desc"],
                 "wavelength": band_meta["wl"],
                 "native_resolution_m": native_res,
-                "resampled_to_10m": native_res != 10,
+                "resampled_to_10m": resampled,
+                "resampling": None if method is None else method.name,
+                "values": "stored L2A DN, nodata=0, NOT reflectance",
+                "radiometry": radiometry[band_name],
+                "source_href": unsigned_href(asset.href),
                 "file": out_path,
                 "file_size_bytes": file_size,
                 "shape": list(data.shape),
+                "valid_pixels": int((data != profile["nodata"]).sum()),
             }
-            log.info("    ✓ %s saved → %s (%.1f KB, %dx%d)",
-                     band_name, out_path, file_size / 1024,
-                     data.shape[1], data.shape[0])
+            log.info("    ✓ %s saved → %s (%.1f KB, %dx%d) radiometry=%s",
+                     band_name, out_path, file_size / 1024, data.shape[1], data.shape[0],
+                     radiometry[band_name]["status"])
 
+        except FileExistsError:
+            raise
         except Exception as exc:
             log.error("    ✗ %s failed: %s", band_name, exc)
+            band_info[band_name] = {"status": "download_failed", "error": str(exc)}
 
     meta = {
         "scene_id": scene_id,
         "date": date,
         "source": "planetary_computer_stac",
         "collection": "sentinel-2-l2a",
+        "n_items_matched": len(items),
         "point": {"lat": lat, "lon": lon},
         "buffer_m": buffer_m,
         "aoi_bounds": {
@@ -260,33 +273,46 @@ def download_multiband(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON,
             "north": bbox_wgs84[3],
         },
         "target_resolution_m": 10,
+        "grid": {"crs": str(ref_crs), "transform": list(ref_transform)[:6], "shape": list(ref_shape),
+                 "reference_band": "B02 native 10 m"},
         "bands": band_info,
+        "radiometry_note": ("Files hold stored DN. Convert ONCE with the per-band 'radiometry' record; "
+                            "status radiometry_unknown => blocked from scientific use."),
         "properties": {
+            "acquired": item.properties.get("datetime"),
+            "platform": item.properties.get("platform"),
             "cloud_cover": item.properties.get("eo:cloud_cover"),
             "s2_datatake_id": item.properties.get("s2:datatake_id"),
             "s2_mgrs_tile": item.properties.get("s2:mgrs_tile"),
             "s2_product_uri": item.properties.get("s2:product_uri"),
+            "s2_processing_baseline": item.properties.get("s2:processing_baseline"),
+            "s2_granule_id": item.properties.get("s2:granule_id"),
+            "s2_generation_time": item.properties.get("s2:generation_time"),
+            "s2_product_type": item.properties.get("s2:product_type"),
         },
-        "downloaded_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "downloaded_at": datetime.now(timezone.utc).isoformat(),
     }
 
     meta_path = os.path.join(output_dir, f"S2_multiband_meta_{date_str}.json")
+    if os.path.exists(meta_path) and not overwrite:
+        raise FileExistsError(f"{meta_path} exists — refusing to overwrite (pass overwrite=True)")
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
     log.info("Metadata → %s", meta_path)
 
+    ok_bands = {k: v for k, v in band_info.items() if v.get("status") == "ok"}
     log.info("=" * 60)
     log.info("Download summary:")
     log.info("  Scene: %s", scene_id)
     log.info("  Bands downloaded: %d / %d", len(band_files), len(REEF_BANDS))
     total_size = 0
-    for bn, bi in band_info.items():
+    for bn, bi in ok_bands.items():
         sz_kb = bi["file_size_bytes"] / 1024
         total_size += bi["file_size_bytes"]
-        resampled_tag = " [resampled→10m]" if bi["resampled_to_10m"] else ""
-        log.info("    %s (%s) — %.1f KB — %dx%d%s",
+        resampled_tag = f" [resampled→10m, {bi['resampling']}]" if bi["resampled_to_10m"] else ""
+        log.info("    %s (%s) — %.1f KB — %dx%d%s — radiometry=%s",
                  bn, bi["description"], sz_kb,
-                 bi["shape"][1], bi["shape"][0], resampled_tag)
+                 bi["shape"][1], bi["shape"][0], resampled_tag, bi["radiometry"]["status"])
     log.info("  Total size: %.1f KB (%.2f MB)", total_size / 1024, total_size / 1e6)
     log.info("  Output dir: %s", output_dir)
 
@@ -295,6 +321,7 @@ def download_multiband(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON,
         "bands": band_files,
         "meta_path": meta_path,
         "total_size_bytes": total_size,
+        "radiometry": radiometry,
     }
 
 
@@ -313,6 +340,8 @@ def main():
                         help="Clip radius in meters")
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR,
                         help="Output directory for GeoTIFFs")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Allow replacing existing files in output-dir (off by default)")
 
     args = parser.parse_args()
 
@@ -324,6 +353,7 @@ def main():
         date=args.date,
         buffer_m=args.buffer_m,
         output_dir=args.output_dir,
+        overwrite=args.overwrite,
     )
 
     if not result:

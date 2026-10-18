@@ -43,12 +43,18 @@ def _bands(h: int = 40, w: int = 40, *,
 
 def _scene(h: int = 40, w: int = 40,
            bbox=(-8.4, 36.9, -8.1, 37.1), **band_kwargs) -> dict:
-    """Minimal scene dict with synthetic bands + georeference."""
+    """Minimal scene dict with synthetic bands + georeference.
+
+    The transform is built from a lon/lat bbox, so the CRS must be EPSG:4326.
+    (Before 2026-10-09 this fixture declared EPSG:32629 with a degree-based transform —
+    an inconsistent georeference that the old detector never checked because it
+    indexed lon/lat straight into the transform.)
+    """
     import rasterio.crs
     return {
         "bands":     _bands(h, w, **band_kwargs),
         "transform": from_bounds(*bbox, w, h),
-        "crs":       rasterio.crs.CRS.from_epsg(32629),
+        "crs":       rasterio.crs.CRS.from_epsg(4326),
         "shape":     (h, w),
     }
 
@@ -104,10 +110,11 @@ class TestRobustMinmax:
         assert out[np.isfinite(out)].min() >= 0.0
         assert out[np.isfinite(out)].max() <= 1.0
 
-    def test_constant_array_returns_zeros(self):
+    def test_constant_array_returns_nan(self):
+        """No contrast → normalised feature undefined (NaN), not a fake zero likelihood (policy 2026-10-09)."""
         arr = np.full((20, 20), 5.0, dtype=np.float32)
         out = _robust_minmax(arr)
-        assert np.allclose(out, 0.0)
+        assert np.all(np.isnan(out))
 
     def test_nan_stays_nan(self):
         arr = np.array([1.0, 2.0, np.nan, 4.0, 5.0])

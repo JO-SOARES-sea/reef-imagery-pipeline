@@ -74,10 +74,16 @@ AW = {"B02": 0.0145, "B03": 0.0612, "B04": 0.4300}
 # ── A: Gordon/QAA Kd inversion ───────────────────────────────────────────────
 def gordon_kd_inversion(
     b02: np.ndarray, b03: np.ndarray, b04: np.ndarray | None = None, kd_prior: float = 0.045
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float | None]:
     """
     Quasi-Analytical Algorithm (QAA, Lee et al. 2002) simplified for B02/B03/B04.
-    Returns: (kd_b02_est, kd_b03_est, kd_b04_est)
+    Returns: (kd_b02_est, kd_b03_est, kd_b04_est | None)
+
+    kd_b04_est is None when no genuine B04 is supplied. (Until 2026-10-09 it was
+    filled with the unvalidated scaling ``Kd_B03 * aw_B04/aw_B03 * 0.8``; that
+    fallback was removed — Kd(665) is a derived optical property, not a spectral
+    band, but it still must not be invented. It feeds only the
+    ``kd_b04_estimated`` summary field and a log line.)
 
     Step 1 – rrs (sub-surface remote sensing reflectance):
         rrs = Rrs / (0.52 + 1.7 * Rrs)   [Lee 2002, eq. 4]
@@ -102,7 +108,9 @@ def gordon_kd_inversion(
 
     mask = (b02 > 0) & (b03 > 0)
     if mask.sum() < 10:
-        return kd_prior, kd_prior * (490 / 560) ** 0.5, kd_prior * 0.1
+        # Too few valid pixels: B02/B03 fall back to the seasonal prior (pre-existing behaviour);
+        # Kd at 665 nm is NOT invented from the prior.
+        return kd_prior, kd_prior * (490 / 560) ** 0.5, None
 
     rrs02 = to_rrs(b02[mask])
     rrs03 = to_rrs(b03[mask])
@@ -130,13 +138,13 @@ def gordon_kd_inversion(
     kd_b02 = float(np.nanmedian(a_blue + bb_blue))
     kd_b03 = float(np.nanmedian(a555 + bb555))
 
-    # B04 (665nm) — use simple Gordon power-law scaling from B03
-    kd_b04 = kd_b03 * (AW_B04 / AW_B03 * 0.8) if b04 is None else _kd_from_band(b04, AW_B04)
+    # B04 (665nm) — only from a genuine B04 band; otherwise unavailable (no scaling from B03)
+    kd_b04 = None if b04 is None else _kd_from_band(b04, AW_B04)
 
     # Sanity clamp: Algarve coastal range
     kd_b02 = float(np.clip(kd_b02, 0.010, 0.500))
     kd_b03 = float(np.clip(kd_b03, 0.020, 0.500))
-    kd_b04 = float(np.clip(kd_b04, 0.050, 2.000))
+    kd_b04 = None if kd_b04 is None else float(np.clip(kd_b04, 0.050, 2.000))
 
     return kd_b02, kd_b03, kd_b04
 
@@ -272,7 +280,8 @@ def run_predictor(
     # ── Kd estimation: QAA if B03 available, else band-ratio, else prior ──────
     kd_method = "seasonal_prior"
     kd_high_uncert = False
-    kd_b02, kd_b03, kd_b04 = kd_seas, kd_seas, kd_seas
+    kd_b02, kd_b03 = kd_seas, kd_seas
+    kd_b04 = None  # Kd(665): only from genuine B04 via QAA; never copied from the Kd490 prior
     kd_map = None  # per-pixel Kd490 map; computed when B04 is available
 
     if b03_arr is not None:
@@ -283,7 +292,8 @@ def run_predictor(
                 raise ValueError("QAA Kd saturated — using band-ratio fallback")
             kd_high_uncert = abs(kd_b02 - kd_seas) / kd_seas > 0.30
             kd_method = "gordon_qaa"
-            logging.info("Gordon/QAA Kd: B02=%.4f B03=%.4f B04=%.4f (prior=%.4f)", kd_b02, kd_b03, kd_b04, kd_seas)
+            logging.info("Gordon/QAA Kd: B02=%.4f B03=%.4f B04=%s (prior=%.4f)", kd_b02, kd_b03,
+                         "unavailable" if kd_b04 is None else f"{kd_b04:.4f}", kd_seas)
         except Exception as e:
             logging.warning("Gordon inversion issue (%s) — falling back to band-ratio", e)
             kd_b02, kd_high_uncert = estimate_kd_bandratio(b02_arr, b03_arr, kd_seas)
@@ -696,7 +706,7 @@ def run_predictor(
         "kd_seasonal_prior": kd_seas,
         "kd_b02_estimated": round(kd_b02, 5),
         "kd_b03_estimated": round(kd_b03, 5),
-        "kd_b04_estimated": round(kd_b04, 5),
+        "kd_b04_estimated": None if kd_b04 is None else round(kd_b04, 5),
         "kd_high_uncertainty": kd_high_uncert,
         "sza_air_deg": sza_deg,
         "sza_water_deg": round(sza_water_deg, 3),

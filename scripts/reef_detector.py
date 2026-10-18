@@ -21,6 +21,19 @@ The 2 GPS reef points are the only ground truth. Everything the map highlights
 ELSEWHERE is a CANDIDATE with the same optical signature — to be confirmed by
 dive survey, not asserted as fact.
 
+Missing-band / radiometry policy (2026-10-09)
+---------------------------------------------
+* Bands are read on the scene's NATIVE grid (UTM CRS + the affine transform of the
+  window actually read). Lon/lat points are projected into that CRS before indexing.
+* DN → reflectance uses the asset's own ``raster:bands`` scale/offset (see
+  src/s2_radiometry.py). No metadata → ``radiometry_unknown`` → band unusable.
+* Nodata (DN 0) is masked before arithmetic; invalid pixels are NaN and excluded
+  from every statistic. Valid negative reflectances are kept.
+* Feature dependencies live in src/band_registry.py. B08 gates the water/glint
+  mask and therefore everything downstream: without genuine, valid B08 the scene
+  result is ``status="unavailable"`` — never a likelihood of 0, never a fabricated
+  band, never a reduced-band model.
+
 Usage
 -----
     python scripts/reef_detector.py \
@@ -34,14 +47,24 @@ import argparse
 import json
 import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import rasterio
 from rasterio.windows import Window
-from rasterio.transform import from_bounds, rowcol
+from rasterio.windows import transform as window_transform
+from rasterio.transform import rowcol, xy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src import band_registry  # noqa: E402
+from src.s2_grid import WindowOutsideRaster, bbox_window, unsigned_href  # noqa: E402
+from src.s2_radiometry import (  # noqa: E402
+    dn_to_reflectance,
+    radiometry_from_stac_asset,
+    unknown as radiometry_unknown,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,6 +124,12 @@ FISHING_GPS_NAMES = {s["name"] for s in REEF_SITES if str(s["name"]).startswith(
 _EARTH_SEARCH  = "https://earth-search.aws.element84.com/v1"
 _S2_COLLECTION = "sentinel-2-l2a"
 _BAND_ASSETS   = {"blue": "blue", "green": "green", "red": "red", "nir": "nir"}
+# Detector band key → Sentinel-2 band id (registry vocabulary)
+_BAND_IDS      = {"blue": "B02", "green": "B03", "red": "B04", "nir": "B08"}
+
+
+class DetectorUnavailable(RuntimeError):
+    """Raised when genuine inputs are insufficient to compute a gated feature."""
 
 OUTPUT_DIR = Path("outputs/reef_detector")
 
@@ -113,13 +142,21 @@ EMODNET_DEPTH = Path("outputs/reef_habitat/emodnet/depth_algarve.tif")
 DEPTH_SHALLOW = -2.0     # exclude breaking-wave surf zone
 DEPTH_DEEP    = -22.0    # Sentinel-2 optical floor in clear Algarve water
 
+# Minimum shallow clean-water pixels for a meaningful Lyzenga k-ratio
+MIN_DII_PIXELS = 50
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Scene download (windowed COG read over bbox)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _resolve_assets(scene_id: str) -> dict:
-    """Return {asset_key: href} for a scene via Earth Search STAC."""
+    """
+    Return the STAC item (as plain dicts) for *scene_id* via Earth Search.
+
+    Keeps the full asset dicts (incl. ``raster:bands`` scale/offset/nodata) and the
+    product provenance properties so radiometry is decided from metadata, not assumed.
+    """
     from pystac_client import Client
     cat = Client.open(_EARTH_SEARCH)
     res = cat.search(collections=[_S2_COLLECTION], ids=[scene_id], max_items=1)
@@ -129,67 +166,125 @@ def _resolve_assets(scene_id: str) -> dict:
     it = items[0]
     return {
         "id":          it.id,
+        "provider":    _EARTH_SEARCH,
         "datetime":    it.properties["datetime"][:10],
+        "acquired":    it.properties.get("datetime"),
         "cloud_cover": it.properties.get("eo:cloud_cover", -1),
         "platform":    it.properties.get("platform", "?"),
-        "assets":      {k: v.href for k, v in it.assets.items()},
+        "properties":  dict(it.properties),
+        "assets":      {k: v.to_dict() for k, v in it.assets.items()},
     }
 
 
-def load_scene(scene_id: str, bbox: tuple) -> dict:
+_PROVENANCE_KEYS = ("s2:product_uri", "s2:datatake_id", "s2:processing_baseline", "s2:granule_id",
+                    "earthsearch:boa_offset_applied", "processing:software", "s2:generation_time")
+
+
+def _bbox_window(src, bbox: tuple) -> Window:
+    """Integer native-grid window for *bbox* (see src/s2_grid.bbox_window)."""
+    try:
+        return bbox_window(src, bbox)
+    except WindowOutsideRaster as exc:
+        raise DetectorUnavailable(str(exc)) from exc
+
+
+def load_scene_from_item(item: dict, bbox: tuple, opener=rasterio.open) -> dict:
     """
-    Download blue/green/red/nir BOA reflectance over *bbox* for *scene_id*.
+    Read blue/green/red/nir over *bbox* on the scene's native grid.
 
     Returns dict with:
-        bands     : dict of {band: (H,W) float32 reflectance}
-        transform : rasterio Affine (in WGS-84)
-        crs       : EPSG:4326
-        meta      : scene metadata (id, date, cloud, platform)
+        bands       : {band: (H,W) float32 reflectance, NaN where invalid} — only usable bands
+        valid       : {band: (H,W) bool}  explicit validity masks
+        band_status : {band: "ok" | "missing_asset" | "radiometry_unknown" | "no_valid_pixels" | "grid_mismatch"}
+        radiometry  : {band: Radiometry.as_dict()}
+        usable_bands: sorted Sentinel-2 ids (e.g. ["B02","B03","B08"])
+        transform   : affine transform of the window actually read (native CRS)
+        crs         : native CRS of the rasters
+        meta        : id/date/cloud/platform + product provenance + asset hrefs
+    No band is ever synthesised: an unusable band is simply absent from ``bands``.
     """
-    meta = _resolve_assets(scene_id)
+    props = item.get("properties", {})
+    meta = {
+        "id": item.get("id"), "datetime": item.get("datetime"), "acquired": item.get("acquired"),
+        "cloud_cover": item.get("cloud_cover", -1), "platform": item.get("platform", "?"),
+        "provider": item.get("provider"),
+        "provenance": {k: props[k] for k in _PROVENANCE_KEYS if k in props},
+        "asset_hrefs": {},
+    }
     log.info("Loading %s  date=%s  cloud=%.2f%%  platform=%s",
-             meta["id"], meta["datetime"], meta["cloud_cover"], meta["platform"])
+             meta["id"], meta["datetime"], float(meta["cloud_cover"]), meta["platform"])
 
-    lon_min, lat_min, lon_max, lat_max = bbox
     bands: dict[str, np.ndarray] = {}
-    out_transform = None
-    out_shape = None
+    valid: dict[str, np.ndarray] = {}
+    status: dict[str, str] = {}
+    radiometry: dict[str, dict] = {}
+    ref_grid = None  # (crs, window_transform, shape) of the first band read
 
     for band, asset_key in _BAND_ASSETS.items():
-        href = meta["assets"].get(asset_key)
-        if href is None:
-            raise RuntimeError(f"No '{asset_key}' asset in {scene_id}")
-        with rasterio.open(href) as src:
-            # Project bbox corners into the scene CRS (UTM)
-            from pyproj import Transformer
-            tf = Transformer.from_crs("EPSG:4326", src.crs, always_xy=True)
-            x0, y0 = tf.transform(lon_min, lat_min)
-            x1, y1 = tf.transform(lon_max, lat_max)
-            row0, col0 = src.index(x0, y1)   # upper-left
-            row1, col1 = src.index(x1, y0)   # lower-right
-            row0, row1 = sorted((row0, row1))
-            col0, col1 = sorted((col0, col1))
-            # Clamp to valid raster bounds (bbox may extend beyond the tile)
-            row0 = max(0, row0);  row1 = min(src.height, row1)
-            col0 = max(0, col0);  col1 = min(src.width,  col1)
-            window = Window.from_slices((row0, row1), (col0, col1))
-            data = src.read(1, window=window).astype(np.float32) / 10000.0  # DN→reflectance
-            bands[band] = data
-            if out_shape is None:
-                out_shape = data.shape
-                # Build a WGS-84 transform for the output grid
-                out_transform = from_bounds(lon_min, lat_min, lon_max, lat_max,
-                                            data.shape[1], data.shape[0])
+        asset = item.get("assets", {}).get(asset_key)
+        if asset is None or not asset.get("href"):
+            status[band] = "missing_asset"
+            radiometry[band] = radiometry_unknown("asset absent from item").as_dict()
+            log.warning("  %s (%s): asset missing — band unavailable, not substituted", band, _BAND_IDS[band])
+            continue
+        meta["asset_hrefs"][band] = unsigned_href(asset["href"])
+        rad = radiometry_from_stac_asset(asset, props)
+        radiometry[band] = rad.as_dict()
+        if not rad.is_known:
+            status[band] = "radiometry_unknown"
+            log.warning("  %s (%s): radiometry_unknown (%s) — blocked", band, _BAND_IDS[band], rad.source)
+            continue
+        with opener(asset["href"]) as src:
+            window = _bbox_window(src, bbox)
+            wt = window_transform(window, src.transform)
+            dn = src.read(1, window=window)
+            grid = (src.crs, wt, dn.shape)
+            if ref_grid is None:
+                ref_grid = grid
+            elif (grid[0] != ref_grid[0] or not grid[1].almost_equals(ref_grid[1]) or grid[2] != ref_grid[2]):
+                # Never silently crop/resample one band onto another's grid.
+                status[band] = "grid_mismatch"
+                log.warning("  %s: grid differs from reference band — unavailable", band)
+                continue
+            refl, ok = dn_to_reflectance(dn, rad, extra_nodata=src.nodata)
+        if not ok.any():
+            status[band] = "no_valid_pixels"
+            log.warning("  %s (%s): no valid pixels in window — unavailable", band, _BAND_IDS[band])
+            continue
+        bands[band], valid[band], status[band] = refl, ok, "ok"
+        log.info("  %s (%s): %d/%d valid px  scale=%g offset=%g  [%s]", band, _BAND_IDS[band],
+                 int(ok.sum()), ok.size, rad.scale, rad.offset, rad.source)
 
-    # Align shapes (bands can differ by 1 px due to rounding)
-    min_h = min(b.shape[0] for b in bands.values())
-    min_w = min(b.shape[1] for b in bands.values())
-    for k in bands:
-        bands[k] = bands[k][:min_h, :min_w]
-    out_transform = from_bounds(lon_min, lat_min, lon_max, lat_max, min_w, min_h)
+    if ref_grid is None:
+        raise DetectorUnavailable(f"no band of {meta['id']} could be read")
+    crs, transform, shape = ref_grid
+    usable = sorted(_BAND_IDS[b] for b, st in status.items() if st == "ok")
+    log.info("  Native grid %s  %dx%d px  usable=%s", crs, shape[0], shape[1], usable)
+    return {"bands": bands, "valid": valid, "band_status": status, "radiometry": radiometry,
+            "usable_bands": usable, "transform": transform, "crs": crs, "shape": shape, "meta": meta}
 
-    log.info("  Loaded %d×%d px  bands=%s", min_h, min_w, list(bands.keys()))
-    return {"bands": bands, "transform": out_transform, "crs": "EPSG:4326", "meta": meta}
+
+def load_scene(scene_id: str, bbox: tuple) -> dict:
+    """Resolve *scene_id* on Earth Search and load it (see load_scene_from_item)."""
+    return load_scene_from_item(_resolve_assets(scene_id), bbox)
+
+
+def lonlat_to_rowcol(scene: dict, lon: float, lat: float) -> tuple[int, int]:
+    """Project WGS-84 lon/lat into the scene CRS and return the containing pixel (row, col)."""
+    from pyproj import Transformer
+    tf = Transformer.from_crs("EPSG:4326", scene["crs"], always_xy=True)
+    x, y = tf.transform(lon, lat)
+    r, c = rowcol(scene["transform"], x, y)
+    return int(r), int(c)
+
+
+def rowcol_to_lonlat(scene: dict, row: int, col: int) -> tuple[float, float]:
+    """WGS-84 lon/lat of the CENTRE of pixel (row, col)."""
+    from pyproj import Transformer
+    x, y = xy(scene["transform"], row, col, offset="center")
+    tf = Transformer.from_crs(scene["crs"], "EPSG:4326", always_xy=True)
+    lon, lat = tf.transform(x, y)
+    return float(lon), float(lat)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -200,36 +295,53 @@ def measure_clarity(scene: dict, lon: float, lat: float, win: int = 3) -> dict:
     """
     Measure real water clarity at (lon, lat) from the scene pixels.
 
+    Only valid pixels of genuine bands are used. A field whose band is unavailable
+    (or has no valid pixel in the window) is None — never 0 and never borrowed
+    from another band.
+
     Returns dict with:
-        nir_glint      : mean NIR reflectance in window (low = clean, high = glint)
-        blue, green, red : mean BOA reflectance at the reef
-        bottom_contrast: (blue - green) — strong bottom signal deepens this gap
-        valid          : whether the point fell inside the raster
+        nir_glint      : mean NIR reflectance in window (low = clean, high = glint) | None
+        blue, green, red : mean BOA reflectance at the reef | None
+        bottom_contrast: (blue - green) | None
+        n_valid_px     : valid pixels per band in the window
+        valid          : point inside raster AND blue+green have valid pixels there
     """
-    bands     = scene["bands"]
-    transform = scene["transform"]
-    h, w = bands["blue"].shape
-    row, col = rowcol(transform, lon, lat)
+    bands = scene["bands"]
+    h, w = scene.get("shape") or next(iter(bands.values())).shape
+    row, col = lonlat_to_rowcol(scene, lon, lat)
     if not (0 <= row < h and 0 <= col < w):
         return {"valid": False}
 
     half = win // 2
     r0, r1 = max(0, row - half), min(h, row + half + 1)
     c0, c1 = max(0, col - half), min(w, col + half + 1)
+    valid_masks = scene.get("valid", {})
+
+    n_valid: dict[str, int] = {}
 
     def _m(b):
-        return float(np.nanmean(bands[b][r0:r1, c0:c1]))
+        if b not in bands:
+            n_valid[b] = 0
+            return None
+        sub = bands[b][r0:r1, c0:c1]
+        ok = np.isfinite(sub)
+        if b in valid_masks:
+            ok &= valid_masks[b][r0:r1, c0:c1]
+        n_valid[b] = int(ok.sum())
+        return float(sub[ok].mean()) if ok.any() else None
 
     blue, green, red, nir = _m("blue"), _m("green"), _m("red"), _m("nir")
+    _r = lambda v: None if v is None else round(v, 5)  # noqa: E731
     return {
-        "valid":           True,
+        "valid":           blue is not None and green is not None,
         "row":             int(row),
         "col":             int(col),
-        "nir_glint":       round(nir, 5),
-        "blue":            round(blue, 5),
-        "green":           round(green, 5),
-        "red":             round(red, 5),
-        "bottom_contrast": round(blue - green, 5),
+        "nir_glint":       _r(nir),
+        "blue":            _r(blue),
+        "green":           _r(green),
+        "red":             _r(red),
+        "bottom_contrast": None if blue is None or green is None else round(blue - green, 5),
+        "n_valid_px":      n_valid,
     }
 
 
@@ -246,7 +358,7 @@ def load_depth_on_grid(scene: dict, emodnet_path: Path = EMODNET_DEPTH) -> np.nd
         log.warning("EMODnet depth not found at %s — depth masking disabled", emodnet_path)
         return None
     from rasterio.warp import reproject, Resampling
-    h, w = scene["bands"]["blue"].shape
+    h, w = scene.get("shape") or scene["bands"]["blue"].shape
     dst = np.full((h, w), np.nan, dtype=np.float32)
     with rasterio.open(emodnet_path) as src:
         src_arr = src.read(1).astype(np.float32)
@@ -255,24 +367,37 @@ def load_depth_on_grid(scene: dict, emodnet_path: Path = EMODNET_DEPTH) -> np.nd
         reproject(
             source=src_arr, destination=dst,
             src_transform=src.transform, src_crs=src.crs,
+            src_nodata=np.nan, dst_nodata=np.nan,
             dst_transform=scene["transform"], dst_crs=scene["crs"],
-            resampling=Resampling.bilinear,
+            resampling=Resampling.bilinear,   # depth is continuous; NaN excluded via src_nodata
         )
     return dst
 
 
 def water_mask(bands: dict, depth: np.ndarray | None = None,
-               nir_max: float = GLINT_NIR_MAX) -> np.ndarray:
+               nir_max: float = GLINT_NIR_MAX, valid: dict | None = None) -> np.ndarray:
     """
     Boolean mask of clean, optically-shallow water:
-      - low NIR (no land, no sun glint)
+      - genuine NIR below the glint/land threshold (B08 is REQUIRED — no substitute)
       - positive blue/green
+      - every input pixel valid (not nodata, finite)
       - depth within the optical window [DEPTH_DEEP, DEPTH_SHALLOW] if depth given
+
+    Valid negative NIR (possible after the BOA offset over very dark water) is kept;
+    only non-finite / nodata pixels are dropped.
     """
+    missing = [b for b in ("nir", "blue", "green") if b not in bands]
+    if missing:
+        raise DetectorUnavailable(f"water_mask needs genuine bands {missing} (B08 gates land/glint masking)")
     nir, blue, green = bands["nir"], bands["blue"], bands["green"]
-    m = (nir < nir_max) & (nir >= 0) & (blue > 0) & (green > 0)
+    m = np.isfinite(nir) & np.isfinite(blue) & np.isfinite(green)
+    m &= (nir < nir_max) & (blue > 0) & (green > 0)
+    if valid:
+        for k in ("nir", "blue", "green"):
+            if k in valid:
+                m &= valid[k]
     if depth is not None:
-        m = m & (depth >= DEPTH_DEEP) & (depth <= DEPTH_SHALLOW)
+        m = m & np.isfinite(depth) & (depth >= DEPTH_DEEP) & (depth <= DEPTH_SHALLOW)
     return m
 
 
@@ -304,10 +429,13 @@ def compute_dii(scene: dict, depth: np.ndarray | None = None) -> dict:
         k_ratio     : estimated k_blue/k_green
     """
     bands = scene["bands"]
+    valid = scene.get("valid")
     # Shallow zone where we actually classify substrate
-    mask  = water_mask(bands, depth)
+    mask  = water_mask(bands, depth, valid=valid)
     # Full water (all depths) for deep-water background estimation
-    full_water = water_mask(bands, depth=None)
+    full_water = water_mask(bands, depth=None, valid=valid)
+    if not full_water.any():
+        raise DetectorUnavailable("no clean-water pixels (genuine NIR below glint threshold) for Lsw estimation")
 
     blue, green = bands["blue"], bands["green"]
 
@@ -324,6 +452,9 @@ def compute_dii(scene: dict, depth: np.ndarray | None = None) -> dict:
     ok = mask & (db > eps) & (dg > eps)
     x_blue[ok]  = np.log(db[ok])
     x_green[ok] = np.log(dg[ok])
+
+    if ok.sum() < MIN_DII_PIXELS:
+        raise DetectorUnavailable(f"only {int(ok.sum())} usable shallow-water pixels (< {MIN_DII_PIXELS})")
 
     # Auto attenuation ratio from the joint distribution of clean-water pixels
     k_ratio = _attenuation_ratio(x_blue[ok], x_green[ok])
@@ -376,7 +507,8 @@ def _robust_minmax(arr: np.ndarray, lo_pct: float = 2, hi_pct: float = 98) -> np
     lo = np.percentile(finite, lo_pct)
     hi = np.percentile(finite, hi_pct)
     if hi - lo < 1e-9:
-        return np.zeros_like(arr)
+        # No contrast → the normalised feature is undefined, not "zero likelihood".
+        return np.full(arr.shape, np.nan, dtype=np.float32)
     out = (arr - lo) / (hi - lo)
     return np.clip(out, 0, 1)
 
@@ -404,7 +536,6 @@ def reef_likelihood(scene: dict, dii_result: dict, bg_win: int = 31) -> dict:
     bands = scene["bands"]
     green = bands["green"]
     mask  = dii_result["mask"]            # shallow, clean-water pixels
-    transform = scene["transform"]
     h, w = green.shape
 
     # Local background statistics (large window removes depth gradient)
@@ -428,9 +559,10 @@ def reef_likelihood(scene: dict, dii_result: dict, bg_win: int = 31) -> dict:
     # Anchor diagnostics at the GPS reef
     anchor_z = []
     for site in REEF_SITES:
-        row, col = rowcol(transform, float(site["lon"]), float(site["lat"]))
+        row, col = lonlat_to_rowcol(scene, float(site["lon"]), float(site["lat"]))
         if 0 <= row < h and 0 <= col < w:
-            v = np.nanmean(darkness_z[max(0, row-1):row+2, max(0, col-1):col+2])
+            win = darkness_z[max(0, row-1):row+2, max(0, col-1):col+2]
+            v = float(np.nanmean(win)) if np.isfinite(win).any() else float("nan")
             if np.isfinite(v):
                 anchor_z.append(float(v))
     anchor_darkness_z = float(np.mean(anchor_z)) if anchor_z else float("nan")
@@ -457,18 +589,23 @@ def validate_at_gps(scene: dict, like_result: dict) -> dict:
     A working detector puts the confirmed reef in a high percentile.
     """
     like = like_result["likelihood"]
-    transform = scene["transform"]
     h, w = like.shape
     finite = like[np.isfinite(like)]
 
     results: list[dict] = []
     for site in REEF_SITES:
-        row, col = rowcol(transform, float(site["lon"]), float(site["lat"]))
+        row, col = lonlat_to_rowcol(scene, float(site["lon"]), float(site["lat"]))
         if not (0 <= row < h and 0 <= col < w):
             results.append({"site": str(site["name"]), "in_bbox": False})
             continue
-        val = float(np.nanmean(like[max(0, row-1):row+2, max(0, col-1):col+2]))
-        pct = float((finite < val).mean() * 100) if finite.size else 0.0
+        win = like[max(0, row-1):row+2, max(0, col-1):col+2]
+        if not np.isfinite(win).any() or finite.size == 0:
+            # Masked (land/glint/nodata/outside depth window): no value, not 0.
+            results.append({"site": str(site["name"]), "in_bbox": True,
+                            "likelihood": None, "percentile": None})
+            continue
+        val = float(np.nanmean(win))
+        pct = float((finite < val).mean() * 100)
         results.append({
             "site":       str(site["name"]),
             "in_bbox":    True,
@@ -485,6 +622,8 @@ def validate_at_gps(scene: dict, like_result: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def write_geotiff(arr: np.ndarray, scene: dict, path: Path) -> None:
+    if path.exists():
+        raise FileExistsError(f"refusing to overwrite existing raster {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
     h, w = arr.shape
     profile = {
@@ -509,8 +648,14 @@ def write_overlay_png(scene: dict, like: np.ndarray, path: Path) -> None:
         return
 
     bands = scene["bands"]
+    if not all(k in bands for k in ("red", "green", "blue")):
+        # True colour needs genuine B04/B03/B02 — do not fake a red channel.
+        log.warning("  true-colour overlay skipped: %s unavailable",
+                    [k for k in ("red", "green", "blue") if k not in bands])
+        return
     rgb = np.dstack([bands["red"], bands["green"], bands["blue"]])
     rgb = np.clip(rgb / np.nanpercentile(rgb, 99), 0, 1)   # stretch
+    rgb = np.where(np.isfinite(rgb), rgb, 0.0)              # display only: invalid shown black
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     axes[0].imshow(rgb)
@@ -523,10 +668,9 @@ def write_overlay_png(scene: dict, like: np.ndarray, path: Path) -> None:
     axes[1].axis("off")
 
     # Mark GPS reef sites
-    transform = scene["transform"]
     h, w = like.shape
     for site in REEF_SITES:
-        row, col = rowcol(transform, site["lon"], site["lat"])
+        row, col = lonlat_to_rowcol(scene, float(site["lon"]), float(site["lat"]))
         if 0 <= row < h and 0 <= col < w:
             for ax in axes:
                 ax.plot(col, row, "co", ms=10, mfc="none", mew=2)
@@ -545,42 +689,87 @@ def write_overlay_png(scene: dict, like: np.ndarray, path: Path) -> None:
 # 8. Main
 # ─────────────────────────────────────────────────────────────────────────────
 
-def process_scene(scene_id: str, bbox: tuple) -> dict:
-    """Full pipeline for one scene → clarity + likelihood map + validation."""
-    scene = load_scene(scene_id, bbox)
-    depth = load_depth_on_grid(scene)
-    if depth is not None:
-        shallow_px = int(((depth >= DEPTH_DEEP) & (depth <= DEPTH_SHALLOW)).sum())
-        log.info("  Depth grid loaded; %d px in optical window [%.0f, %.0f m]",
-                 shallow_px, DEPTH_DEEP, DEPTH_SHALLOW)
+def _unavailable(scene: dict | None, reason: str, clarity: dict | None = None,
+                 availability: dict | None = None, meta: dict | None = None) -> dict:
+    """Explicit 'no result' record — never a zero likelihood."""
+    return {
+        "status":       "unavailable",
+        "reason":       reason,
+        "scene":        (scene or {}).get("meta", meta or {}),
+        "band_status":  (scene or {}).get("band_status"),
+        "radiometry":   (scene or {}).get("radiometry"),
+        "availability": availability,
+        "clarity":      clarity or {},
+        "validation":   None,
+        "outputs":      {},
+    }
 
-    # Clarity at each GPS reef
+
+def process_scene_loaded(scene: dict, out_dir: Path, depth: np.ndarray | None = None) -> dict:
+    """Detector on an already-loaded scene (testable offline)."""
+    av = band_registry.evaluate(scene["usable_bands"])
+    # Clarity fields are computed per band; unavailable ones are None.
     clarity = {}
     for site in REEF_SITES:
         c = measure_clarity(scene, float(site["lon"]), float(site["lat"]))
         clarity[str(site["name"])] = c
         if c.get("valid"):
-            log.info("  Clarity @ %s: NIR_glint=%.4f  blue=%.4f green=%.4f red=%.4f  bottom_contrast=%.4f",
+            log.info("  Clarity @ %s: NIR_glint=%s  blue=%s green=%s red=%s  bottom_contrast=%s",
                      site["name"], c["nir_glint"], c["blue"], c["green"], c["red"], c["bottom_contrast"])
 
-    dii_result  = compute_dii(scene, depth)
-    like_result = reef_likelihood(scene, dii_result)
+    gating = av.gating_failures()
+    if gating:
+        reason = "gated features unavailable: " + ", ".join(
+            f"{g} (missing {av.missing_bands.get(g) or av.blocked_by.get(g)})" for g in gating)
+        log.warning("  UNAVAILABLE — %s", reason)
+        return _unavailable(scene, reason, clarity, av.as_dict())
+
+    try:
+        dii_result  = compute_dii(scene, depth)
+        like_result = reef_likelihood(scene, dii_result)
+    except DetectorUnavailable as exc:
+        log.warning("  UNAVAILABLE — %s", exc)
+        return _unavailable(scene, str(exc), clarity, av.as_dict())
     validation  = validate_at_gps(scene, like_result)
 
-    # Outputs
     date = scene["meta"]["datetime"]
-    write_geotiff(like_result["likelihood"], scene, OUTPUT_DIR / f"reef_likelihood_{date}.tif")
-    write_geotiff(dii_result["dii"],          scene, OUTPUT_DIR / f"dii_{date}.tif")
-    write_overlay_png(scene, like_result["likelihood"], OUTPUT_DIR / f"overlay_{date}.png")
+    outputs = {
+        "likelihood": str(out_dir / f"reef_likelihood_{date}.tif"),
+        "dii":        str(out_dir / f"dii_{date}.tif"),
+        "overlay":    str(out_dir / f"overlay_{date}.png"),
+    }
+    write_geotiff(like_result["likelihood"], scene, Path(outputs["likelihood"]))
+    write_geotiff(dii_result["dii"],          scene, Path(outputs["dii"]))
+    write_overlay_png(scene, like_result["likelihood"], Path(outputs["overlay"]))
 
     return {
+        "status":     "ok",
         "scene":      scene["meta"],
+        "band_status": scene["band_status"],
+        "radiometry": scene["radiometry"],
+        "availability": av.as_dict(),
         "clarity":    clarity,
         "k_ratio":    round(dii_result["k_ratio"], 4),
         "anchor_darkness_z": like_result["anchor_darkness_z"],
         "bg_win_px":  like_result["bg_win_px"],
         "validation": validation,
+        "outputs":    outputs,
+        "caveat":     "software output only — not a scientifically validated reef map",
     }
+
+
+def process_scene(scene_id: str, bbox: tuple, out_dir: Path) -> dict:
+    """Full pipeline for one scene → clarity + likelihood map + validation, or status=unavailable."""
+    try:
+        scene = load_scene(scene_id, bbox)
+    except DetectorUnavailable as exc:
+        return _unavailable(None, str(exc), meta={"id": scene_id})
+    depth = load_depth_on_grid(scene)
+    if depth is not None:
+        shallow_px = int(((depth >= DEPTH_DEEP) & (depth <= DEPTH_SHALLOW)).sum())
+        log.info("  Depth grid loaded; %d px in optical window [%.0f, %.0f m]",
+                 shallow_px, DEPTH_DEEP, DEPTH_SHALLOW)
+    return process_scene_loaded(scene, out_dir, depth)
 
 
 def main() -> None:
@@ -592,40 +781,46 @@ def main() -> None:
     args = parser.parse_args()
 
     bbox = tuple(args.bbox)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # One fresh directory per run: never overwrite earlier/legacy outputs.
+    run_dir = OUTPUT_DIR / f"run_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    run_dir.mkdir(parents=True, exist_ok=False)
 
     reports = []
     for scene_id in args.scene:
         print(f"\n{'='*70}\nPROCESSING {scene_id}\n{'='*70}")
         try:
-            reports.append(process_scene(scene_id, bbox))
+            reports.append(process_scene(scene_id, bbox, run_dir))
         except Exception as exc:
             log.error("Failed on %s: %s", scene_id, exc, exc_info=True)
+            reports.append(_unavailable(None, f"error: {exc}", meta={"id": scene_id}))
 
-    # Cross-scene clarity comparison
     print(f"\n{'='*70}\nCLARITY COMPARISON (real pixels at GPS reef)\n{'='*70}")
     for r in reports:
         c = r["clarity"].get("Pedra_Sta_Eulalia", {})
         if c.get("valid"):
-            print(f"  {r['scene']['datetime']}  ({r['scene']['platform']}):  "
-                  f"NIR_glint={c['nir_glint']:.4f}  bottom_contrast={c['bottom_contrast']:.4f}  "
-                  f"cloud={r['scene']['cloud_cover']:.2f}%")
-    print(f"\n  Lower NIR_glint = cleaner water surface (less sun glint).")
-    print(f"  Higher bottom_contrast = stronger seafloor signal reaching the sensor.")
+            print(f"  {r['scene'].get('datetime')}  ({r['scene'].get('platform')}):  "
+                  f"NIR_glint={c['nir_glint']}  bottom_contrast={c['bottom_contrast']}  "
+                  f"cloud={r['scene'].get('cloud_cover')}%")
+    print("\n  Lower NIR_glint = cleaner water surface (less sun glint).")
+    print("  Higher bottom_contrast = stronger seafloor signal reaching the sensor.")
 
-    print(f"\n{'='*70}\nDETECTOR VALIDATION AT GPS REEF ANCHORS\n{'='*70}")
+    print(f"\n{'='*70}\nDETECTOR STATUS / VALIDATION AT GPS REEF ANCHORS\n{'='*70}")
     for r in reports:
-        print(f"  {r['scene']['datetime']}:")
+        print(f"  {r['scene'].get('datetime') or r['scene'].get('id')}: status={r['status']}")
+        if r["status"] != "ok":
+            print(f"    reason: {r['reason']}")
+            continue
         for a in r["validation"]["anchors"]:
             if a.get("in_bbox"):
-                print(f"    {a['site']:22s} likelihood={a['likelihood']:.3f}  "
-                      f"({a['percentile']:.1f}th percentile)")
+                lk = "n/a (masked)" if a["likelihood"] is None else f"{a['likelihood']:.3f}"
+                pc = "" if a["percentile"] is None else f"  ({a['percentile']:.1f}th percentile)"
+                print(f"    {a['site']:22s} likelihood={lk}{pc}")
 
-    report_path = OUTPUT_DIR / "detector_report.json"
+    report_path = run_dir / "detector_report.json"
     with open(report_path, "w") as f:
-        json.dump(reports, f, indent=2)
+        json.dump(reports, f, indent=2, default=str)
     print(f"\nReport: {report_path}")
-    print(f"Maps:   {OUTPUT_DIR}/reef_likelihood_*.tif  +  overlay_*.png")
+    print("NOTE: software output only — the detector is not scientifically validated.")
 
 
 if __name__ == "__main__":
