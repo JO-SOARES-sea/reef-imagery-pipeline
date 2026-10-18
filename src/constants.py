@@ -160,3 +160,29 @@ REFLECTANCE_DN_THRESHOLD = 2.0
 # The no-data proxy in reef_ml_predictor_acolite equals this value so that FFT-less
 # runs are not penalised; callers that DO compute FFT should pass real values.
 FFT_CLEAN_THRESHOLD = 5000
+
+# =============================================================================
+# VISIBILITY FORECAST (scripts/forecast_visibility.py)
+# =============================================================================
+
+# Calm-water horizontal visibility: Poole-Atkins Secchi depth (1.7 / Kd490),
+# halved to approximate horizontal diver visibility.
+VIS_POOLE_ATKINS = 1.7
+VIS_HORIZONTAL_FACTOR = 0.5
+
+# Reference depth for the near-bed orbital velocity (typical reef depth, m)
+VIS_FORECAST_DEPTH_M = 12.0
+
+# Near-bed orbital velocity at which fine sand / silt starts to resuspend (m/s)
+VIS_RESUSPENSION_U_CRIT = 0.12
+
+# Visibility divisor per unit of resuspension excess: vis = calm / (1 + k * excess)
+VIS_RESUSPENSION_SENSITIVITY = 1.5
+
+# Fraction of a day's resuspension still in the water column the next day
+VIS_TURBIDITY_MEMORY = 0.5
+
+# Rain runoff penalties, applied when IPMA precipitation probability >= threshold (%)
+VIS_RAIN_PROB_THRESHOLD = 70
+VIS_RAIN_PENALTY_RIA = 0.75    # sites next to the Ria Formosa inlets
+VIS_RAIN_PENALTY_COAST = 0.85  # rest of the coast (ribeiras, Salgados lagoon)
