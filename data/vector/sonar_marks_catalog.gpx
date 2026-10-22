@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="ReefImageryPipeline" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>Marcas de Sonda e Recifes Naturais do Algarve</name>
+    <time>2026-10-22T17:24:52.562913Z</time>
+  </metadata>
+  <wpt lat="36.964967" lon="-7.959650">
+    <name>Lages</name>
+    <cmt>Sonda: 13.6m | 36°57,898' N 007°57,579' W | Inspecionado via satélite: 929 cristas detetadas</cmt>
+    <sym>Rock</sym>
+  </wpt>
+</gpx>
