@@ -1,7 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-import numpy as np
-from unittest.mock import patch, MagicMock
-from src.sentinel1_roughness import roughness_from_sigma0, extract_sigma0_at_point
+
+from src.sentinel1_roughness import extract_sigma0_at_point, roughness_from_sigma0
+
 
 def test_roughness_from_sigma0_calm():
     # VV and VH are equal or close -> roughness close to 0 (calm)
@@ -34,24 +36,24 @@ def test_extract_sigma0_at_point_success(mock_band, mock_reproject, mock_open):
     # Mock rasterio open to return mock src
     mock_src = MagicMock()
     mock_open.return_value.__enter__.return_value = mock_src
-    
+
     # Mock reproject to fill the destination array with 100.0
     def side_effect(*args, **kwargs):
         dest = kwargs.get("destination")
         if dest is not None:
             dest.fill(100.0)
     mock_reproject.side_effect = side_effect
-    
+
     mock_item = {
         "assets": {
             "vv": "s3://sentinel-s1/measurement/iw-vv.tiff",
             "vh": "s3://sentinel-s1/measurement/iw-vh.tiff"
         }
     }
-    
+
     with patch("rasterio.Env"):
         res = extract_sigma0_at_point(mock_item, -8.21, 37.06)
-        
+
     assert res is not None
     assert "vv" in res
     assert "vh" in res

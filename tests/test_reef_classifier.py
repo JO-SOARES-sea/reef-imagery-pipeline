@@ -5,7 +5,6 @@ ReefClassifier is instantiated with pretrained=False throughout.
 """
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import numpy as np

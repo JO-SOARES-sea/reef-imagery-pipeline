@@ -1,13 +1,14 @@
 """Tests for src/drift_export.py — drift summary JSON export."""
 
-import os
 import json
+import os
 import tempfile
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from src.drift_monitor import observe, reset, OK, WARNING, CRITICAL
+import pytest
+
 from src.drift_export import export_payload, export_to_file, export_to_webhook
+from src.drift_monitor import observe, reset
 
 
 @pytest.fixture(autouse=True)

@@ -1,11 +1,9 @@
 """Tests for src/drift_report_html.py — HTML drift report generation."""
 
-import os
 import json
-import tempfile
-import pytest
+import os
 
-from src.drift_report_html import generate_html, export_html, _load_history
+from src.drift_report_html import _load_history, export_html, generate_html
 
 
 def _make_history(tmp_path, batches):

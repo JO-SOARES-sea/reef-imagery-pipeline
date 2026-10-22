@@ -1,14 +1,16 @@
 """Tests for src/drift_history.py — historical drift report aggregation."""
 
-import os
-import json
 import csv
-import tempfile
-import pytest
+import json
+import os
 
 from src.drift_history import (
-    load_reports, aggregate, export_history_csv, export_history_json,
-    _flatten_report, HISTORY_FIELDS,
+    HISTORY_FIELDS,
+    _flatten_report,
+    aggregate,
+    export_history_csv,
+    export_history_json,
+    load_reports,
 )
 
 

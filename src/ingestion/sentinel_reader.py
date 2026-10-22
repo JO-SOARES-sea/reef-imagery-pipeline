@@ -384,6 +384,40 @@ def save_geotiff(
         dst.write(clean_data.astype(np.float32))
 
     logger.info(f"GeoTIFF exportado com sucesso: {out_file}")
+
+    # Gera sempre uma versão .png com mapa de cores para visualização direta sem software GIS
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        png_file = out_file.with_suffix(".png")
+        if data.ndim == 2:
+            fig, ax = plt.subplots(figsize=(8, 6), dpi=150)
+            valid = data[np.isfinite(data) & (data != nodata)]
+            vmin = float(np.min(valid)) if len(valid) > 0 else 0.0
+            vmax = float(np.max(valid)) if len(valid) > 0 else 1.0
+            im = ax.imshow(data, cmap="magma", vmin=vmin, vmax=vmax)
+            ax.set_title(out_file.stem, fontsize=11, fontweight="bold")
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.axis("off")
+            plt.tight_layout()
+            fig.savefig(png_file, dpi=150, bbox_inches="tight")
+            plt.close(fig)
+            logger.info(f"Imagem visual PNG exportada: {png_file}")
+        elif data.ndim == 3 and data.shape[0] >= 3:
+            rgb = np.stack([data[2], data[1], data[0]], axis=-1)  # R, G, B
+            rgb_valid = rgb[np.isfinite(rgb) & (rgb > 0)]
+            if len(rgb_valid) > 0:
+                p2, p98 = np.percentile(rgb_valid, (2, 98))
+                rgb_disp = np.clip((rgb - p2) / (p98 - p2 + 1e-6), 0.0, 1.0)
+            else:
+                rgb_disp = np.zeros_like(rgb)
+            plt.imsave(png_file, rgb_disp)
+            logger.info(f"Imagem visual RGB PNG exportada: {png_file}")
+    except Exception as exc:
+        logger.warning(f"Não foi possível exportar imagem auxiliar PNG ({exc}).")
+
     return out_file
 
 

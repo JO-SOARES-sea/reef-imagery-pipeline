@@ -19,7 +19,7 @@ import json
 import logging
 import os
 import re as _re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
@@ -207,7 +207,7 @@ def generate_html(reports_dir=None):
 </table>
 </div>
 
-<p class="generated">Generated: {datetime.now(timezone.utc).isoformat()[:19]}Z</p>
+<p class="generated">Generated: {datetime.now(UTC).isoformat()[:19]}Z</p>
 
 <script>
 const labels = {_js_json(labels)};

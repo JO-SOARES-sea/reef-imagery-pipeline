@@ -12,9 +12,9 @@ sys.path.append(str(ROOT))
 
 from scripts.reef_bathy_module import compute_s2_depth_inversion
 from src.stumpf_emodnet_calibration import (
-    validate_reprojected_emodnet,
-    stumpf_log_ratio,
     calibrate_stumpf_vs_emodnet,
+    stumpf_log_ratio,
+    validate_reprojected_emodnet,
 )
 
 

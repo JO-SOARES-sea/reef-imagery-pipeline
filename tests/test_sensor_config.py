@@ -1,14 +1,14 @@
 """Tests for src/sensor_config.py — multi-sensor registry."""
 import pytest
+
 from src.sensor_config import (
+    SENSOR_REGISTRY,
+    get_blue_band,
+    get_reef_bands,
     get_sensor,
     list_sensors,
-    get_reef_bands,
-    get_blue_band,
     map_band_name,
-    SENSOR_REGISTRY,
 )
-
 
 # ── Registry integrity ────────────────────────────────────────────────────────
 

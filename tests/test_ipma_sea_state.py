@@ -5,7 +5,6 @@ import pytest
 
 import src.ipma_sea_state as _mod
 
-
 # ── Fixtures / helpers ────────────────────────────────────────────────────────
 
 def _clear_caches():

@@ -53,7 +53,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable, Sequence
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -139,8 +139,8 @@ def _resolve_stream(date_range: tuple[str, str], stream: Stream) -> ConcreteStre
     """Pick 'my' (reprocessed) or 'nrt' from the requested window."""
     if stream != "auto":
         return stream  # type: ignore[return-value]
-    end = datetime.fromisoformat(_iso(date_range[1], end=True)).replace(tzinfo=timezone.utc)
-    horizon = datetime.now(timezone.utc) - timedelta(days=MY_LAG_DAYS)
+    end = datetime.fromisoformat(_iso(date_range[1], end=True)).replace(tzinfo=UTC)
+    horizon = datetime.now(UTC) - timedelta(days=MY_LAG_DAYS)
     return "nrt" if end >= horizon else "my"
 
 

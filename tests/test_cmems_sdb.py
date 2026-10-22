@@ -5,14 +5,12 @@ All tests are offline (no network). CMEMS fetch is mocked via tmp GeoTIFFs.
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 import numpy as np
 import pytest
 import rasterio
 from rasterio.transform import from_bounds
-
 
 # ─── helpers ────────────────────────────────────────────────────────────────
 

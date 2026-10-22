@@ -10,14 +10,12 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.reef_candidates import extract_candidates, write_geojson
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

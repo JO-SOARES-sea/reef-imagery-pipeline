@@ -1,6 +1,4 @@
 """Tests for DGTOrthoClient — offline (mocked) and network variants."""
-import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -117,8 +115,8 @@ class TestBestAvailable:
 class TestDownloadTiles:
     def test_skips_on_403(self, tmp_path, caplog, monkeypatch):
         """403 from signed download URL → logs error, returns empty list, no exception."""
-        import src.dgt_ortho_client as _mod
         import src.dgt_cdd_auth as _auth
+        import src.dgt_ortho_client as _mod
         monkeypatch.setattr(_mod, "_DGT_USER", "test_user")
         monkeypatch.setattr(_mod, "_DGT_PASS", "test_pass")
         monkeypatch.setattr(_auth, "_session", None)

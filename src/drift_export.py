@@ -13,7 +13,7 @@ All exports are non-blocking and failure-safe — they never break inference or 
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def export_payload(batch_id=None, model_version=None, schema_version=None):
         }
 
     return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "pipeline": _PIPELINE_NAME,
         "model_version": model_version or "unknown",
         "schema_version": schema_version or "unknown",
@@ -169,4 +169,4 @@ def _read_model_versions(model_version=None, schema_version=None):
 
 def _generate_batch_id():
     """Generate a default batch ID from timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%S")
+    return datetime.now(UTC).strftime("%Y-%m-%d-%H%M%S")

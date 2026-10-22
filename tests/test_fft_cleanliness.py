@@ -1,5 +1,6 @@
-import pytest
 import pandas as pd
+import pytest
+
 from src.ranking_model import predict_score
 
 
@@ -7,6 +8,7 @@ from src.ranking_model import predict_score
 def test_fft_cleanliness():
     import planetary_computer as pc
     from pystac_client import Client
+
     from src.reef_ml_predictor import extract_features_from_stac
 
     catalog = Client.open(

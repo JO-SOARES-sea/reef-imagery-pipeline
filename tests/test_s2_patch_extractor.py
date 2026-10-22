@@ -8,8 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.s2_patch_extractor import _normalise_band, _band_url, _CLIP_LOW, _CLIP_HIGH
-
+from src.s2_patch_extractor import _CLIP_HIGH, _CLIP_LOW, _band_url, _normalise_band
 
 # ─────────────────────────────────────────────────────────────────────────────
 # _normalise_band

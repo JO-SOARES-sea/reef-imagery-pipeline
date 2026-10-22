@@ -21,7 +21,7 @@ No credentials required — IPMA API is fully public.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 
 import requests
@@ -173,7 +173,7 @@ def get_conditions(date: str | None = None) -> dict:
         "sst_max_c": wave.get("sst_max_c"),
         "wind_speed_ms": wind,
         "source": "IPMA day-0 forecast",
-        "fetch_date": datetime.now(timezone.utc).date().isoformat(),
+        "fetch_date": datetime.now(UTC).date().isoformat(),
     }
 
     # Derive usability under default thresholds

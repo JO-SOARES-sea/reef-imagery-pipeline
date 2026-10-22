@@ -18,8 +18,8 @@ feature is *gating* (its absence makes the detector's main output unavailable).
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping
 
 # Canonical band ids used by the reef detector (Earth Search asset keys in brackets).
 BAND_ALIASES = {"B02": "blue", "B03": "green", "B04": "red", "B08": "nir"}

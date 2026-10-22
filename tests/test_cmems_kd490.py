@@ -1,5 +1,4 @@
 """Tests for src/cmems_kd490.py — Kd490 climatology with CMEMS/static fallback."""
-import os
 import sys
 import types
 from unittest.mock import MagicMock, patch
@@ -14,17 +13,17 @@ if "copernicusmarine" not in sys.modules:
     _cm_stub.open_dataset = MagicMock()
     sys.modules["copernicusmarine"] = _cm_stub
 
-from src.constants import KD490_TABLE as _STATIC_TABLE, KD490_DEFAULT
 import src.cmems_kd490 as _mod
-
+from src.constants import KD490_DEFAULT
+from src.constants import KD490_TABLE as _STATIC_TABLE
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def _make_fake_dataset(kd_by_month: dict[int, float] | None = None,
                        zsd_by_month: dict[int, float] | None = None):
     """Build a minimal xarray-like mock that copernicusmarine.open_dataset returns."""
-    import xarray as xr
     import pandas as pd
+    import xarray as xr
 
     if kd_by_month is None:
         kd_by_month = {m: 0.045 + m * 0.001 for m in range(1, 13)}
@@ -66,7 +65,8 @@ class TestFetchCmemsClimatology:
         """If CMEMS returns KD490 for only some months, the rest come from static."""
         monkeypatch.setenv("CMEMS_USER", "u")
         monkeypatch.setenv("CMEMS_PASSWORD", "p")
-        import xarray as xr, pandas as pd
+        import pandas as pd
+        import xarray as xr
         # Only Jan–Jun in the dataset
         times = pd.date_range("2020-01-01", periods=6, freq="MS")
         kd_data  = np.full((6, 1, 1), 0.042, dtype=np.float32)
@@ -147,11 +147,11 @@ class TestRefreshFromCmems:
         with patch("src.cmems_kd490._fetch_cmems_climatology",
                    side_effect=OSError("network unreachable")):
             _mod.refresh_from_cmems()
-        assert _mod.KD490_TABLE_LIVE == before
+        assert before == _mod.KD490_TABLE_LIVE
 
     def test_returns_true_and_updates_table_on_success(self):
-        live_kd  = {m: 0.040 for m in range(1, 13)}
-        live_zsd = {m: 18.0  for m in range(1, 13)}
+        live_kd  = dict.fromkeys(range(1, 13), 0.04)
+        live_zsd = dict.fromkeys(range(1, 13), 18.0)
         with patch("src.cmems_kd490._fetch_cmems_climatology",
                    return_value=(live_kd, live_zsd)):
             result = _mod.refresh_from_cmems()
@@ -162,8 +162,8 @@ class TestRefreshFromCmems:
     def test_mutates_in_place_not_rebind(self):
         """Capture a reference BEFORE refresh — it must reflect the new values after."""
         captured_ref = _mod.KD490_TABLE_LIVE
-        live_kd  = {m: 0.099 for m in range(1, 13)}
-        live_zsd = {m: 5.0   for m in range(1, 13)}
+        live_kd  = dict.fromkeys(range(1, 13), 0.099)
+        live_zsd = dict.fromkeys(range(1, 13), 5.0)
         with patch("src.cmems_kd490._fetch_cmems_climatology",
                    return_value=(live_kd, live_zsd)):
             _mod.refresh_from_cmems()

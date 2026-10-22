@@ -160,3 +160,13 @@ REFLECTANCE_DN_THRESHOLD = 2.0
 # The no-data proxy in reef_ml_predictor_acolite equals this value so that FFT-less
 # runs are not penalised; callers that DO compute FFT should pass real values.
 FFT_CLEAN_THRESHOLD = 5000
+
+# =============================================================================
+# TYPESAFE JEV — FAIXAS DE DECISÃO (Noul "is_natural_reef")
+# =============================================================================
+
+# O Noul é P(sim), não uma confiança: 0.5 significa indecisão do modelo.
+# Valores entre os dois limiares vão para revisão manual. Ponto de partida
+# conservador da documentação TypeSafe — calibrar com o ground truth CCMAR/Greta.
+JEV_REEF_YES_MIN = 0.8
+JEV_REEF_NO_MAX = 0.2

@@ -17,6 +17,7 @@ from rasterio.transform import from_origin
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import scripts.reef_detector as rd  # noqa: E402
 from src import band_registry  # noqa: E402
 from src.s2_radiometry import (  # noqa: E402
     RADIOMETRY_UNKNOWN,
@@ -25,7 +26,6 @@ from src.s2_radiometry import (  # noqa: E402
     radiometry_from_product_metadata,
     radiometry_from_stac_asset,
 )
-import scripts.reef_detector as rd  # noqa: E402
 
 # Synthetic UTM 29N grid near Santa Eulália (values chosen only to be inside zone 29)
 X0, Y0, RES = 580_000.0, 4_105_000.0, 10.0
@@ -303,8 +303,9 @@ class TestNodata:
         assert np.isnan(grid[:, : W // 2 - 2]).all()
 
     def test_downloader_resampling_excludes_nodata_and_uses_nearest_for_categories(self):
-        import scripts.download_multiband_s2 as dl
         from rasterio.warp import Resampling
+
+        import scripts.download_multiband_s2 as dl
         src = np.full((30, 25), 1500, dtype=np.uint16)
         src[:, :5] = 0  # nodata strip
         out = dl.resample_to_grid(src, from_origin(X0, Y0, 20, 20), CRS, 0,

@@ -10,10 +10,11 @@ offline CI.  Run them locally with:
     pytest tests/test_bathy_calibrator.py -m network -v
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 import rasterio
-from pathlib import Path
 from rasterio.warp import transform_bounds
 
 from src.constants import STUMPF_LOG_EPSILON, STUMPF_N
@@ -106,7 +107,7 @@ def _skip_if_missing(spot):
 @pytest.mark.network
 def test_zone_classification():
     """classify_benthic_zone returns expected zone label for known Algarve spots."""
-    from src.bathy_calibrator import fetch_isobaths_for_bbox, classify_benthic_zone
+    from src.bathy_calibrator import classify_benthic_zone, fetch_isobaths_for_bbox
 
     expected = [
         (37.0636, -8.2193, "very_shallow"),
@@ -128,8 +129,10 @@ def test_buffer_sampling_improvement(spot):
     """Buffer sampling produces >= as many isobath samples as point sampling."""
     _skip_if_missing(spot)
     from src.bathy_calibrator import (
-        fetch_isobaths_for_bbox, _sample_pixels_near_isobath,
-        BUF_PIX, BENTHIC_ISOBATHS,
+        BENTHIC_ISOBATHS,
+        BUF_PIX,
+        _sample_pixels_near_isobath,
+        fetch_isobaths_for_bbox,
     )
     b02, _, bounds = _load_raster_wgs84(spot["dir"] / spot["b02"])
     b03, _, _ = _load_raster_wgs84(spot["dir"] / spot["b03"])
@@ -152,8 +155,9 @@ def test_single_isobath_offset_calibration(spot):
     """Single-isobath offset calibration sets m1=STUMPF_M1_LITERATURE."""
     _skip_if_missing(spot)
     from src.bathy_calibrator import (
-        fetch_isobaths_for_bbox, calibrate_stumpf_from_isobaths,
         STUMPF_M1_LITERATURE,
+        calibrate_stumpf_from_isobaths,
+        fetch_isobaths_for_bbox,
     )
     b02, _, bounds = _load_raster_wgs84(spot["dir"] / spot["b02"])
     b03, _, _ = _load_raster_wgs84(spot["dir"] / spot["b03"])
@@ -174,7 +178,8 @@ def test_single_isobath_offset_calibration(spot):
 def test_before_after_bias():
     """IH-calibrated Stumpf reduces mean |bias| across all spots."""
     from src.bathy_calibrator import (
-        fetch_isobaths_for_bbox, calibrate_stumpf_from_isobaths,
+        calibrate_stumpf_from_isobaths,
+        fetch_isobaths_for_bbox,
         validate_sdb_vs_chart,
     )
     all_before, all_after = [], []
@@ -215,7 +220,8 @@ def test_per_spot_bias_threshold(spot):
     """Per-spot bias and RMSE must stay below configured thresholds after calibration."""
     _skip_if_missing(spot)
     from src.bathy_calibrator import (
-        fetch_isobaths_for_bbox, calibrate_stumpf_from_isobaths,
+        calibrate_stumpf_from_isobaths,
+        fetch_isobaths_for_bbox,
         validate_sdb_vs_chart,
     )
     b02, _, bounds = _load_raster_wgs84(spot["dir"] / spot["b02"])
@@ -246,7 +252,8 @@ def test_sdb_depth_distribution(spot):
     """SDB median depth must be in physically plausible range [0–35 m]."""
     _skip_if_missing(spot)
     from src.bathy_calibrator import (
-        fetch_isobaths_for_bbox, calibrate_stumpf_from_isobaths,
+        calibrate_stumpf_from_isobaths,
+        fetch_isobaths_for_bbox,
     )
     b02, _, bounds = _load_raster_wgs84(spot["dir"] / spot["b02"])
     b03, _, _ = _load_raster_wgs84(spot["dir"] / spot["b03"])

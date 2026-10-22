@@ -2,9 +2,9 @@
 
 import sys
 import types
-import numpy as np
-import pytest
 from unittest.mock import MagicMock, patch
+
+import numpy as np
 
 
 # ---------------------------------------------------------------------------
@@ -29,7 +29,6 @@ if "requests" not in sys.modules:
     sys.modules["requests"] = _make_module_stub("requests", get=MagicMock())
 
 from src.dgt_sentinel_integrator import DGTSentinelIntegrator  # noqa: E402
-
 
 BBOX = (-8.25, 37.04, -8.17, 37.10)
 

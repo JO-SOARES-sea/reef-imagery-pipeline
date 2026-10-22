@@ -11,10 +11,8 @@ Tests the core logic of phase_b_calibrate_icesat2.py in isolation:
 Does NOT require NASA EarthData credentials.
 """
 
-import os
 import sys
 import tempfile
-import json
 from pathlib import Path
 
 import numpy as np
@@ -24,11 +22,10 @@ _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 sys.path.insert(0, str(_PROJECT_ROOT))
 
 from scripts.phase_b_calibrate_icesat2 import (
-    fit_calibration,
     apply_calibration,
+    fit_calibration,
     match_icesat2_to_sdb,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Test 1: fit_calibration — sufficient samples

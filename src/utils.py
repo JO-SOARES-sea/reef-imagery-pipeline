@@ -4,6 +4,7 @@ Utilities: raster I/O, sunglint correction, refraction, Beer-Lambert.
 """
 
 import math
+from datetime import UTC
 
 import numpy as np
 import rasterio
@@ -156,7 +157,7 @@ def build_coastal_geojson(csv_path, geojson_path):
     import os as _os
     import shutil as _shutil
     import tempfile as _tmpfile
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     csv_path = str(csv_path)
     geojson_path = str(geojson_path)
@@ -171,7 +172,7 @@ def build_coastal_geojson(csv_path, geojson_path):
     _str_cols = {"site_name", "timestamp"}
 
     features = []
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     for row in rows:
         props = {}
         for k, v in row.items():
@@ -196,7 +197,7 @@ def build_coastal_geojson(csv_path, geojson_path):
 
     # Backup existing file before overwriting
     if _os.path.exists(geojson_path):
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
         _shutil.copy2(geojson_path, geojson_path + f".bak_{stamp}")
 
     # Atomic write

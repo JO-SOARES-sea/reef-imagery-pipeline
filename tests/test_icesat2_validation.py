@@ -1,16 +1,14 @@
 """Tests for src/icesat2_validation.py — ICESat-2 ATL08 SDB validation."""
 import json
-import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 
 from src.icesat2_validation import (
     _fetch_atl08_for_date,
-    _search_atl08,
     _sample_sdb_at_points,
+    _search_atl08,
     run_icesat2_validation,
 )
 
@@ -338,7 +336,7 @@ class TestRunIcesat2Validation:
         # The date passed to _search_atl08 should have been extracted from filename
         call_args = mock_search.call_args
         passed_date = call_args[0][1]  # second positional arg
-        assert "2023-07-15" == passed_date
+        assert passed_date == "2023-07-15"
 
     def test_report_json_contains_all_ok_keys(self, tmp_path):
         depths = np.full((10, 10), 8.0)

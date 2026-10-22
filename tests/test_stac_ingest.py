@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -181,7 +181,7 @@ class TestMetadataFromStacItem:
         assert stac_ingest.metadata_from_stac_item(item)["level"] == "L1C"
 
     def test_date_from_item_datetime(self):
-        dt = datetime(2025, 9, 25, 10, 30, 0, tzinfo=timezone.utc)
+        dt = datetime(2025, 9, 25, 10, 30, 0, tzinfo=UTC)
         item = RichDummyItem(self._FULL_PROPS, dt=dt)
         m = stac_ingest.metadata_from_stac_item(item)
         assert m["date"] == "2025-09-25"

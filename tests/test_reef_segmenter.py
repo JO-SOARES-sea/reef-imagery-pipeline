@@ -2,8 +2,7 @@
 import numpy as np
 import pytest
 
-from src.reef_segmenter import normalize_depth, _DEFAULT_WEIGHTS, HAS_TORCH
-
+from src.reef_segmenter import _DEFAULT_WEIGHTS, HAS_TORCH, normalize_depth
 
 # ── normalize_depth: pure, no torch needed ────────────────────────────────────
 
@@ -70,6 +69,7 @@ class TestSegmentReef:
     def test_tif_roundtrip_writes_georeferenced_mask(self, tmp_path):
         rasterio = pytest.importorskip("rasterio")
         from rasterio.transform import from_bounds
+
         from src.reef_segmenter import segment_reef_tif
 
         src = tmp_path / "bathy_dgt_lidar_20240905.tif"

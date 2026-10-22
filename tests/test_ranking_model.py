@@ -1,12 +1,16 @@
 import os
-import pytest
+from unittest.mock import MagicMock, mock_open, patch
+
 import numpy as np
-from unittest.mock import patch, mock_open, MagicMock
+import pytest
 
 from src.ranking_model import (
-    predict_score, validate_schema, schema_fingerprint,
+    predict_score,
+    schema_fingerprint,
     terrain_exposure_modifier,
+    validate_schema,
 )
+
 
 @pytest.fixture(autouse=True)
 def reset_globals():
@@ -41,7 +45,7 @@ def test_missing_model_fallback():
             "signal": 0.12,
         }
         res = predict_score(features)
-        
+
         assert res["mode"] == "Fallback"
         assert res["score"] > 0
         assert "ML Model unavailable" in res["reason"]
@@ -61,13 +65,13 @@ def test_successful_ml_inference():
     """Test that ML inference works when schema matches."""
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.95])
-    
+
     mock_meta = '{"features": ["benthic_contrast", "snr"]}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         features = {
             "benthic_contrast": 0.2,
             "snr": 100.0,
@@ -78,11 +82,11 @@ def test_successful_ml_inference():
             "cloud_cover": 5.0,
         }
         res = predict_score(features)
-        
+
         assert res["mode"] == "ML"
         assert res["score"] == 0.95
         assert mock_model.predict.called
-        
+
         called_args = mock_model.predict.call_args[0][0]
         assert called_args.iloc[0, 0] == 0.2
         assert called_args.iloc[0, 1] == 100.0
@@ -90,18 +94,18 @@ def test_successful_ml_inference():
 def test_mismatched_schema():
     """Test that a missing required feature gracefully reverts to fallback."""
     mock_model = MagicMock()
-    
+
     mock_meta = '{"features": ["benthic_contrast", "non_existent_feature"]}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         features = {
             "benthic_contrast": 0.2,
         }
         res = predict_score(features)
-        
+
         assert res["mode"] == "Fallback"
         assert not mock_model.predict.called
 
@@ -119,20 +123,20 @@ def test_bathymetry_features_present():
         "bathymetry_zone_class": "shallow_reef",
         "bathy_slope_proxy": 2.5,
     }
-    
+
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.88])
     mock_meta = '{"features": ["benthic_contrast", "snr", "fft_clean", "edge_entropy", "dyn_range", "signal"]}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         res = predict_score(features)
-        
+
         assert res["mode"] == "ML"
         assert res["score"] == 0.88
-        
+
         called_args = mock_model.predict.call_args[0][0]
         assert called_args.iloc[0, 0] == 0.2
         assert called_args.iloc[0, 1] == 100.0
@@ -153,17 +157,17 @@ def test_bathymetry_features_missing():
         "cloud_cover": 5.0,
         "nearest_isobath_distance_m": np.inf,
     }
-    
+
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.77])
     mock_meta = '{"features": ["benthic_contrast", "snr", "fft_clean", "edge_entropy", "dyn_range", "signal"]}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         res = predict_score(features)
-        
+
         assert res["mode"] == "ML"
         assert res["score"] == 0.77
 
@@ -171,13 +175,13 @@ def test_contrast_ignored_in_ml_schema():
     """Test that deprecated contrast is safely ignored when not in model schema."""
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.72])
-    
+
     mock_meta = '{"features": ["benthic_contrast", "snr", "fft_clean", "edge_entropy"], "disabled_features": {"contrast": "non-discriminative"}}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         features = {
             "benthic_contrast": 0.2,
             "snr": 100.0,
@@ -189,10 +193,10 @@ def test_contrast_ignored_in_ml_schema():
             "cloud_cover": 5.0,
         }
         res = predict_score(features)
-        
+
         assert res["mode"] == "ML"
         assert res["score"] == 0.72
-        
+
         called_args = mock_model.predict.call_args[0][0]
         assert list(called_args.columns) == ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]
         assert called_args.shape[1] == 4
@@ -202,13 +206,13 @@ def test_legacy_caller_without_contrast():
     """Test that callers who do NOT send deprecated contrast still work fine."""
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.65])
-    
+
     mock_meta = '{"features": ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         features = {
             "benthic_contrast": 0.2,
             "snr": 100.0,
@@ -218,7 +222,7 @@ def test_legacy_caller_without_contrast():
             "signal": 0.12,
         }
         res = predict_score(features)
-        
+
         assert res["mode"] == "ML"
         assert res["score"] == 0.65
         assert 'benthic_contrast' in res["features_used"]
@@ -236,7 +240,7 @@ def test_predict_score_output_contract():
             "signal": 0.12,
         }
         res = predict_score(features)
-        
+
         assert "score" in res
         assert "mode" in res
         assert "features_used" in res
@@ -246,21 +250,21 @@ def test_predict_score_output_contract():
 
 def test_deterministic_training():
     """Test that training the ML model with the same fixed seed yields identical feature importances."""
-    from sklearn.ensemble import RandomForestRegressor
     import numpy as np
-    
+    from sklearn.ensemble import RandomForestRegressor
+
     np.random.seed(42)
     X = np.random.rand(100, 4)
     y = np.random.randint(0, 2, 100)
-    
+
     model1 = RandomForestRegressor(n_estimators=10, max_depth=3, random_state=42)
     model1.fit(X, y)
     imp1 = model1.feature_importances_
-    
+
     model2 = RandomForestRegressor(n_estimators=10, max_depth=3, random_state=42)
     model2.fit(X, y)
     imp2 = model2.feature_importances_
-    
+
     np.testing.assert_array_equal(imp1, imp2)
 
 
@@ -281,7 +285,7 @@ def test_training_without_contrast():
 def test_canonical_model_path_loaded():
     """Test that ranking_model.py only loads the canonical model path."""
     import src.ranking_model as rm
-    
+
     assert rm.MODEL_PATH.endswith("feature_ranker_model.pkl")
     assert rm.METADATA_PATH.endswith("feature_ranker_metadata.json")
     assert "visibility_rf_bathy" not in rm.MODEL_PATH
@@ -295,15 +299,15 @@ def test_metadata_marks_canonical_and_deprecated():
     if not os.path.exists(meta_path):
         pytest.skip("models/feature_ranker_metadata.json not present")
 
-    with open(meta_path, 'r') as f:
+    with open(meta_path) as f:
         meta = json.load(f)
-    
+
     assert meta.get("canonical") is True
     assert "schema_version" in meta
-    
+
     assert "deprecated_models" in meta
     assert "visibility_rf_bathy.pkl" in meta["deprecated_models"]
-    
+
     assert "contrast" not in meta["features"]
     assert "contrast" in meta.get("disabled_features", {})
 
@@ -312,15 +316,15 @@ def test_legacy_model_not_loaded_by_ranking():
     """Test that predict_score never loads the legacy visibility_rf_bathy model."""
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.60])
-    
+
     mock_meta = '{"features": ["benthic_contrast", "snr", "fft_clean", "edge_entropy", "dyn_range", "signal"], "canonical": true, "schema_version": "2.0"}'
-    
+
     with patch('os.path.exists', return_value=True) as mock_exists, \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         res = predict_score({"benthic_contrast": 0.2, "snr": 100.0, "fft_clean": 10000, "edge_entropy": 6.0, "dyn_range": 0.008, "signal": 0.12})
-        
+
         assert res["mode"] == "ML"
         for call in mock_exists.call_args_list:
             path_arg = call[0][0] if call[0] else ""
@@ -335,9 +339,9 @@ def test_validate_schema_exact_match():
     """Test that exact schema match returns ok=True with no drift."""
     incoming = {"benthic_contrast": 0.2, "snr": 100.0, "fft_clean": 10000, "edge_entropy": 6.0}
     schema = ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]
-    
+
     result = validate_schema(incoming, schema)
-    
+
     assert result["ok"] is True
     assert result["missing"] == set()
     assert result["extra"] == set()
@@ -349,9 +353,9 @@ def test_validate_schema_missing_required():
     """Test that missing required features are detected."""
     incoming = {"benthic_contrast": 0.2, "snr": 100.0}
     schema = ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]
-    
+
     result = validate_schema(incoming, schema)
-    
+
     assert result["ok"] is False
     assert result["missing"] == {"fft_clean", "edge_entropy"}
 
@@ -361,9 +365,9 @@ def test_validate_schema_extra_features():
     incoming = {"benthic_contrast": 0.2, "snr": 100.0, "fft_clean": 10000,
                 "edge_entropy": 6.0, "some_new_feature": 1.0}
     schema = ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]
-    
+
     result = validate_schema(incoming, schema)
-    
+
     assert result["ok"] is True
     assert 'some_new_feature' in result["extra"]
 
@@ -374,9 +378,9 @@ def test_validate_schema_deprecated_features():
                 "edge_entropy": 6.0, "contrast": 0.8}
     schema = ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]
     disabled = {"contrast"}
-    
+
     result = validate_schema(incoming, schema, disabled=disabled)
-    
+
     assert result["ok"] is True
     assert 'contrast' in result["deprecated"]
     assert 'contrast' not in result["extra"]
@@ -387,9 +391,9 @@ def test_validate_schema_type_mismatch():
     incoming = {"benthic_contrast": 0.2, "snr": "bad_string",
                 "fft_clean": 10000, "edge_entropy": 6.0}
     schema = ["benthic_contrast", "snr", "fft_clean", "edge_entropy"]
-    
+
     result = validate_schema(incoming, schema)
-    
+
     assert result["ok"] is False
     assert any("snr" in e for e in result["type_errors"])
 
@@ -399,7 +403,7 @@ def test_schema_fingerprint_stable():
     fp1 = schema_fingerprint(["benthic_contrast", "snr", "fft_clean", "edge_entropy"])
     fp2 = schema_fingerprint(["edge_entropy", "fft_clean", "snr", "benthic_contrast"])
     fp3 = schema_fingerprint(["benthic_contrast", "snr", "fft_clean"])
-    
+
     assert fp1 == fp2
     assert fp1 != fp3
     assert len(fp1) == 12
@@ -409,15 +413,15 @@ def test_drift_missing_feature_triggers_fallback():
     """Test that missing required feature in ML path triggers fallback."""
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.70])
-    
+
     mock_meta = '{"features": ["benthic_contrast", "snr", "nonexistent_required"], "disabled_features": {}}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         res = predict_score({"benthic_contrast": 0.2, "snr": 100.0, "fft_clean": 10000, "edge_entropy": 6.0, "dyn_range": 0.008, "signal": 0.12})
-        
+
         assert res["mode"] == "Fallback"
         assert not mock_model.predict.called
 
@@ -426,20 +430,20 @@ def test_drift_extra_features_do_not_block():
     """Test that extra features in caller do not block ML inference."""
     mock_model = MagicMock()
     mock_model.predict.return_value = np.array([0.85])
-    
+
     mock_meta = '{"features": ["benthic_contrast", "snr"], "disabled_features": {"contrast": "disabled"}}'
-    
+
     with patch('os.path.exists', return_value=True), \
          patch('builtins.open', mock_open(read_data=mock_meta)), \
          patch('pickle.load', return_value=mock_model):
-         
+
         res = predict_score({
             "benthic_contrast": 0.2, "snr": 100.0, "fft_clean": 10000,
             "edge_entropy": 6.0, "dyn_range": 0.008, "signal": 0.12,
             "contrast": 0.8,
             "nearest_isobath_distance_m": 150.0,
         })
-        
+
         assert res["mode"] == "ML"
         assert res["score"] == 0.85
 

@@ -1,12 +1,12 @@
 """Tests for src/coastal_topography.py — CoastalTopographyAnalyzer."""
 
-import pytest
-import numpy as np
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pytest
 
 from src.coastal_topography import CoastalTopographyAnalyzer
-
 
 ALGARVE_BBOX = (-8.25, 37.04, -8.17, 37.10)
 
@@ -204,9 +204,8 @@ class TestProductionOutputs:
 # =============================================================================
 
 import rasterio
-from rasterio.transform import from_bounds as _tfrom_bounds
 from rasterio.crs import CRS as _RioCRS
-from affine import Affine
+from rasterio.transform import from_bounds as _tfrom_bounds
 
 
 def _make_dem(tmp_path, crs_epsg=3763, width=120, height=100, slope=True,

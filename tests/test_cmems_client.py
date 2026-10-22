@@ -8,12 +8,13 @@ point_timeseries pull is marked @pytest.mark.network.
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from src.cmems_client import (
+    _HAS_CM,
     ALGARVE_BBOX,
     DATASETS,
     DEFAULT_VARIABLES,
@@ -37,16 +38,16 @@ class TestResolveStream:
         assert _resolve_stream(("2020-01-01", "2020-01-31"), "auto") == "my"
 
     def test_recent_window_uses_nrt(self):
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         assert _resolve_stream((today, today), "auto") == "nrt"
 
     def test_just_inside_lag_is_nrt(self):
-        end = (datetime.now(timezone.utc) - timedelta(days=MY_LAG_DAYS - 2)).date().isoformat()
+        end = (datetime.now(UTC) - timedelta(days=MY_LAG_DAYS - 2)).date().isoformat()
         assert _resolve_stream(("2024-01-01", end), "auto") == "nrt"
 
     def test_explicit_override_my(self):
         # explicit stream wins even for a recent window
-        today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(UTC).date().isoformat()
         assert _resolve_stream((today, today), "my") == "my"
 
     def test_explicit_override_nrt(self):
@@ -143,6 +144,7 @@ class TestStructuralSanity:
 # Live pull (network)
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.mark.network
+@pytest.mark.skipif(not _HAS_CM, reason="copernicusmarine is not installed")
 class TestPointTimeseriesLive:
     def test_pedra_september_returns_finite_kd490(self):
         ts = point_timeseries(

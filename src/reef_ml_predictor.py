@@ -10,7 +10,7 @@ Calibrado com os inputs reais do confronto entre 2025-09-25 e 2023-10-01.
 
 import argparse
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import planetary_computer as pc
@@ -106,8 +106,8 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
     print(f"🔍 A pesquisar histórico STAC para [{lat:.4f}, {lon:.4f}] com Modelação Físico-Ótica a {depth:.1f} metros...")
     catalog = Client.open("https://planetarycomputer.microsoft.com/api/stac/v1", modifier=pc.sign_inplace)
 
-    end_date = datetime.now(timezone.utc)
-    start_date = datetime(end_date.year - years_back, 1, 1, tzinfo=timezone.utc)
+    end_date = datetime.now(UTC)
+    start_date = datetime(end_date.year - years_back, 1, 1, tzinfo=UTC)
 
     search = catalog.search(
         collections=["sentinel-2-l2a"],

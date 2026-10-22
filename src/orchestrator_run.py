@@ -20,7 +20,7 @@ import os
 import shlex
 import shutil
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -654,7 +654,7 @@ def main(depth: float = 16.0, config_path: str | None = None):
     # Drift monitoring: batch-end summary + export (shadow mode)
     if HAS_DRIFT_MONITOR:
         try:
-            ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H%M%SZ")
+            ts = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%SZ")
             batch_id = f"reef-orchestrator-{ts}-depth{int(depth)}"
             drift_log_summary()
             drift_export_file(batch_id=batch_id)

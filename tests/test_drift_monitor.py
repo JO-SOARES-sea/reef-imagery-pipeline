@@ -1,11 +1,18 @@
 """Tests for src/drift_monitor.py — feature & score distribution drift detection."""
 
 import pytest
-import numpy as np
+
 from src.drift_monitor import (
-    check_feature_drift, check_score_drift, observe, reset,
-    summary, summary_line, log_summary,
-    FEATURE_BASELINES, SCORE_BASELINE, OK, WARNING, CRITICAL
+    CRITICAL,
+    FEATURE_BASELINES,
+    OK,
+    WARNING,
+    check_feature_drift,
+    check_score_drift,
+    observe,
+    reset,
+    summary,
+    summary_line,
 )
 
 
@@ -59,7 +66,7 @@ class TestFeatureDrift:
 
     def test_high_null_rate_critical(self):
         """All features null triggers CRITICAL."""
-        features = {k: None for k in FEATURE_BASELINES}
+        features = dict.fromkeys(FEATURE_BASELINES)
         result = check_feature_drift(features)
         assert result["level"] == CRITICAL
         assert result["null_count"] == len(FEATURE_BASELINES)
@@ -90,7 +97,7 @@ class TestScoreDrift:
         # z = |1.0 - 0.60| / 0.15 = 2.67 → above Z_WARN (2.5)
         for _ in range(15):
             check_score_drift(1.0)
-        
+
         result = check_score_drift(1.0)
         assert result["rolling_mean"] is not None
         assert result["rolling_mean"] > 0.95
@@ -100,7 +107,7 @@ class TestScoreDrift:
         """Normal scores don't trigger rolling drift."""
         for _ in range(15):
             check_score_drift(0.60)
-        
+
         result = check_score_drift(0.58)
         assert result["level"] == OK
 
@@ -109,7 +116,7 @@ class TestObserve:
     def test_observe_returns_both_checks(self):
         """observe() returns feature_drift and score_drift."""
         result = observe(dict(NORMAL_FEATURES), 0.65)
-        
+
         assert "feature_drift" in result
         assert "score_drift" in result
         assert result["feature_drift"]["level"] == OK
@@ -191,17 +198,18 @@ class TestThrottling:
 class TestIntegration:
     def test_predict_score_contract_unchanged(self):
         """predict_score() still returns {score, mode, features_used} with drift monitor active."""
-        from unittest.mock import patch, mock_open, MagicMock
-        from src.ranking_model import predict_score
+        from unittest.mock import patch
+
         import src.ranking_model as rm
-        
+        from src.ranking_model import predict_score
+
         rm._RANKER_MODEL = None
         rm._FEATURE_SCHEMA = None
         rm._IS_FALLBACK = False
-        
+
         with patch('os.path.exists', return_value=False):
             res = predict_score(dict(NORMAL_FEATURES))
-        
+
         assert "score" in res
         assert "mode" in res
         assert "features_used" in res
@@ -236,7 +244,7 @@ class TestSummary:
         # 2 with score drift (z=2.5 → WARNING)
         for _ in range(2):
             observe(dict(NORMAL_FEATURES), 0.22)
-        
+
         s = summary()
         assert s["total_observations"] == 5
         assert s["counts"][OK] == 3
@@ -249,7 +257,7 @@ class TestSummary:
         observe(dict(NORMAL_FEATURES), 0.60)  # OK
         observe(dict(NORMAL_FEATURES), 0.22)  # WARNING
         observe(dict(NORMAL_FEATURES), 1.5)   # CRITICAL (z=6.0)
-        
+
         s = summary()
         assert s["worst_level"] == CRITICAL
         assert s["worst_alert"] is not None
@@ -261,14 +269,14 @@ class TestSummary:
         feat_null['benthic_contrast'] = None
         observe(feat_null, 0.60)
         observe(dict(NORMAL_FEATURES), 0.60)
-        
+
         s = summary()
         assert s["null_spike_count"] == 1
 
     def test_summary_line_format(self):
         """summary_line() returns a readable one-liner."""
         observe(dict(NORMAL_FEATURES), 0.60)
-        
+
         line = summary_line()
         assert "Drift summary:" in line
         assert "obs=1" in line
@@ -278,7 +286,7 @@ class TestSummary:
         """reset() clears all batch counters."""
         observe(dict(NORMAL_FEATURES), 1.5)
         assert summary()["total_observations"] == 1
-        
+
         reset()
         s = summary()
         assert s["total_observations"] == 0
@@ -290,8 +298,9 @@ class TestSummary:
 # =============================================================================
 
 from src.drift_monitor import (
-    estimate_plume_extent, check_terrain_features,
     TERRAIN_BASELINES,
+    check_terrain_features,
+    estimate_plume_extent,
 )
 
 

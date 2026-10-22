@@ -16,14 +16,13 @@ from rasterio.transform import from_bounds
 # reef_detector lives in scripts/, not src/, so we need the repo root on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.reef_detector import (
+    GLINT_NIR_MAX,
     _attenuation_ratio,
     _robust_minmax,
     local_stats,
-    water_mask,
     measure_clarity,
-    GLINT_NIR_MAX,
+    water_mask,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

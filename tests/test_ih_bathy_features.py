@@ -8,14 +8,12 @@ Or:   python tests/test_ih_bathy_features.py
 """
 
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path
 
-import pytest
-
 import numpy as np
+import pytest
 
 # Add src to path
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -23,14 +21,11 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from src.ih_bathy_features import (
-    IHBathyDownloader,
-    BathyFeatureEngine,
-    get_bathy_features_for_summary,
-    ALL_ISOBATHS,
-    REEF_ISOBATHS,
     _QUERY_URL,
+    BathyFeatureEngine,
+    IHBathyDownloader,
+    get_bathy_features_for_summary,
 )
-
 
 # =============================================================================
 # A.  Downloader unit tests  (offline / mocked)

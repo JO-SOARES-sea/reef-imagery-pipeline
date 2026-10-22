@@ -31,8 +31,9 @@ Evidence used when this module was written (2026-10-09):
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 

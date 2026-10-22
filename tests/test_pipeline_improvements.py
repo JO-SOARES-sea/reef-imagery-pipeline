@@ -5,15 +5,11 @@ All tests are offline — no network or satellite access.
 
 from __future__ import annotations
 
-import tempfile
-from datetime import date
 from pathlib import Path
 
 import numpy as np
-import pytest
 import rasterio
 from rasterio.transform import from_bounds
-
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +36,6 @@ def _read_tiff(path: Path) -> np.ndarray:
 
 class TestStumpfMultiscene:
     def test_fuse_returns_expected_keys(self):
-        from src.stumpf_multiscene import fuse_scenes
 
         results = [
             {"m0": -14.0, "m1": 21.0, "rmse_m": 1.5, "calibrated": True},
@@ -55,7 +50,6 @@ class TestStumpfMultiscene:
 
     def test_fuse_scenes_no_ih_returns_default(self):
         from src.stumpf_multiscene import fuse_scenes
-        from src.constants import STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT
 
         # Pass scenes but mock IH failure by providing empty features
         result = fuse_scenes(
@@ -67,7 +61,7 @@ class TestStumpfMultiscene:
 
     def test_fuse_rejects_high_rmse(self):
         """Scenes with RMSE above threshold should be excluded when enough good scenes remain."""
-        from src.stumpf_multiscene import _MAX_RMSE_M, _MIN_SCENES_FOR_FILTER
+        from src.stumpf_multiscene import _MAX_RMSE_M
 
         good = [{"m0": -14.0, "m1": 21.0, "rmse_m": 1.0, "calibrated": True} for _ in range(4)]
         bad  = [{"m0": -50.0, "m1": 80.0, "rmse_m": 8.0, "calibrated": True}]
@@ -114,7 +108,7 @@ class TestIsobathQualityFilter:
 
     def test_sample_excludes_bright_sand(self):
         """Pixels with B03 > 0.15 must not appear in calibration samples."""
-        from src.bathy_calibrator import _sample_pixels_near_isobath, _B03_SAND_THRESHOLD
+        from src.bathy_calibrator import _B03_SAND_THRESHOLD, _sample_pixels_near_isobath
 
         H, W = 20, 20
         # All B03 values above the sand threshold
@@ -175,8 +169,8 @@ class TestKd490Map:
     def test_bright_sand_saturates_toward_ceiling(self):
         """Bright sand / sunglint (high B04) drives Kd toward the 2.0 clip — the
         condition the predictor's scalar-fallback guard is meant to catch."""
-        from src.utils import get_kd490_map
         from src.constants import KD490_MAP_SATURATION_CEILING
+        from src.utils import get_kd490_map
         # Red-dominated reflectance: B04 >> B03/B02 forces the band ratio low → Kd high
         b02 = np.full((20, 20), 0.02, dtype=np.float32)
         b03 = np.full((20, 20), 0.02, dtype=np.float32)
@@ -195,6 +189,7 @@ class TestMultisceneOverride:
 
     def test_run_predictor_accepts_stumpf_overrides(self):
         import inspect
+
         from src.reef_ml_predictor_acolite import run_predictor
         params = inspect.signature(run_predictor).parameters
         assert "stumpf_m0_override" in params
@@ -245,8 +240,8 @@ class TestEnsembleCalibrator:
         assert abs(total - 1.0) < 1e-4
 
     def test_no_sources_returns_default(self):
-        from src.ensemble_calibrator import ensemble_calibrate
         from src.constants import STUMPF_M0_DEFAULT, STUMPF_M1_DEFAULT
+        from src.ensemble_calibrator import ensemble_calibrate
         result = ensemble_calibrate()
         assert result["status"] == "default"
         assert result["m0"] == STUMPF_M0_DEFAULT
@@ -348,7 +343,7 @@ class TestTemporalInterpolation:
 
 class TestSubstrateClassifier:
     def test_sand_detected(self):
-        from src.substrate_classifier import classify_substrate, SAND, _B03_SAND_MIN, _B03B04_SAND
+        from src.substrate_classifier import _B03_SAND_MIN, _B03B04_SAND, SAND, classify_substrate
         H, W = 10, 10
         # Bright sand: high B03, high B03/B04
         b03_val = _B03_SAND_MIN + 0.02
@@ -361,7 +356,7 @@ class TestSubstrateClassifier:
         assert int(classes[5, 5]) == SAND
 
     def test_reef_detected(self):
-        from src.substrate_classifier import classify_substrate, REEF
+        from src.substrate_classifier import REEF, classify_substrate
         H, W = 10, 10
         # Dark reef: low B03 (below sand threshold)
         b02 = np.full((H, W), 0.02, np.float32)
@@ -372,7 +367,7 @@ class TestSubstrateClassifier:
         assert int(classes[5, 5]) == REEF
 
     def test_seagrass_detected_with_b08(self):
-        from src.substrate_classifier import classify_substrate, SEAGRASS, _NDVI_SEAGRASS
+        from src.substrate_classifier import SEAGRASS, classify_substrate
         H, W = 10, 10
         b02 = np.full((H, W), 0.03, np.float32)
         b03 = np.full((H, W), 0.04, np.float32)
@@ -386,7 +381,7 @@ class TestSubstrateClassifier:
         assert int(classes[5, 5]) == SEAGRASS
 
     def test_masked_outside_depth_range(self):
-        from src.substrate_classifier import classify_substrate, MASKED
+        from src.substrate_classifier import MASKED, classify_substrate
         H, W = 10, 10
         b02 = np.full((H, W), 0.04, np.float32)
         b03 = np.full((H, W), 0.04, np.float32)
@@ -396,7 +391,7 @@ class TestSubstrateClassifier:
         assert int(classes[5, 5]) == MASKED
 
     def test_no_depth_uses_all_pixels(self):
-        from src.substrate_classifier import classify_substrate, MASKED
+        from src.substrate_classifier import MASKED, classify_substrate
         H, W = 10, 10
         b02 = np.full((H, W), 0.04, np.float32)
         b03 = np.full((H, W), 0.04, np.float32)

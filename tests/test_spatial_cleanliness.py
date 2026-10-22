@@ -1,6 +1,7 @@
-import numpy as np
 import cv2
+import numpy as np
 import pytest
+
 from src.enhancer import fetch_vsi_patch
 
 pytestmark = pytest.mark.network

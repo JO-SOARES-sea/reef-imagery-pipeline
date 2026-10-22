@@ -2,20 +2,19 @@
 import csv
 import json
 import math
-import tempfile
 from pathlib import Path
 
 import pytest
+
 from src.utils import (
+    beer_lambert_transmittance,
+    build_coastal_geojson,
+    compute_metadata_stub,
+    get_kd490,
+    optical_path,
     snell_air_to_water,
     snell_sza,
-    optical_path,
-    beer_lambert_transmittance,
-    get_kd490,
-    compute_metadata_stub,
-    build_coastal_geojson,
 )
-
 
 # ── snell_air_to_water ────────────────────────────────────────────────────────
 

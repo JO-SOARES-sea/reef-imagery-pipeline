@@ -15,7 +15,33 @@ Usage:
   from src.sensor_config import get_sensor, list_sensors, SENSOR_REGISTRY
 """
 
+from __future__ import annotations
+
+import logging
+import os
 from dataclasses import dataclass
+from typing import Literal
+
+Entitlement = Literal[
+    "free",          # no key needed (Sentinel-2 L2A via Planetary Computer / CDSE)
+    "wms",           # DGT private-network WMS tile clipping (no auth, e.g. OrtoSat2023)
+    "stac_search",   # DGT STAC catalogue search (no auth, IP-restricted to DGT VM)
+    "planet_search", # Planet Data API — requires PLANET_CLIENT_ID (OAuth) + DGT contract
+    "planet_orders", # Planet Orders API — requires PLANET_CLIENT_ID + download entitlement
+    "sh_process",    # Sentinel Hub Process/Catalog/Statistical API (OAuth) — same shape as CDSE
+]
+
+# Planet OAuth endpoint — same client_credentials grant as Sentinel Hub (sh_downloader.py).
+# The DGT-Planet / ESA-TPM contract yields a *separate* client_id/client_secret pair,
+# NOT an API key (PLANET_API_KEY is a personal/developer key with search-only access).
+_PLANET_TOKEN_URL = "https://api.planet.com/oauth/token"
+_PLANET_CLIENT_ID_ENV = "PLANET_CLIENT_ID"
+_PLANET_CLIENT_SECRET_ENV = "PLANET_CLIENT_SECRET"
+# Personal/developer API key — kept as a search-only fallback for low-volume STAC
+# discovery; MUST NOT be used to authenticate download or order submissions.
+_PLANET_API_KEY_ENV = "PLANET_API_KEY"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,6 +73,13 @@ class SensorConfig:
     has_swir: bool  # Has SWIR bands (useful for cloud/water masking)
     has_red_edge: bool  # Has red-edge bands (useful for submerged vegetation)
     notes: str = ""
+    # ── Entitlement / authentication model (see resolve_sensor_credentials) ──
+    entitlement: Entitlement = "free"  # which auth/access model applies
+    # OAuth client_id / client_secret env-var names when entitlement is
+    # "planet_*" or "sh_process". Empty for free/wms/stac_search sensors.
+    oauth_id_env: str = ""
+    oauth_secret_env: str = ""
+    oauth_token_url: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -101,6 +134,7 @@ SENTINEL_2 = SensorConfig(
         "B12": BandConfig("B12", 2190, 20, "SWIR2", 3, AW_2190),
     },
     notes="Baseline sensor. 10m blue/green/red/NIR. Free via Copernicus/Planetary Computer.",
+    entitlement="free",
 )
 
 
@@ -128,6 +162,13 @@ PLEIADES_NEO = SensorConfig(
         "No SWIR or red-edge. Available via Airbus OneAtlas or ESA TPM. "
         "For deeper reef ID, B02 at 1.2m gives 8x better spatial detail than S2."
     ),
+    entitlement="wms",  # default: DGT private-network WMS clipping of pre-staged OrtoSat2023
+    # For full multispectral download, escalate to DGT HPC team for a Planet
+    # OAuth client_id/client_secret (Planet Orders API), then change to
+    # entitlement="planet_orders" + set oauth_id_env / oauth_secret_env.
+    oauth_id_env="",
+    oauth_secret_env="",
+    oauth_token_url="",
 )
 
 SPOT_6_7 = SensorConfig(
@@ -151,6 +192,7 @@ SPOT_6_7 = SensorConfig(
         "B11": BandConfig("B11", 1610, 6.0, "SWIR1", 3, AW_1610),
     },
     notes="1.5m PAN / 6m MS. Good balance of resolution and coverage. SWIR helps cloud masking.",
+    entitlement="stac_search",  # default: DGT STAC catalogue discovery only
 )
 
 WORLDVIEW_3 = SensorConfig(
@@ -179,6 +221,7 @@ WORLDVIEW_3 = SensorConfig(
         "0.31m PAN / 1.24m MS / 3.7m SWIR. Best commercial sensor for water. "
         "SWIR bands enable sunglint correction and shallow water detection."
     ),
+    entitlement="stac_search",  # default: DGT STAC catalogue discovery only
 )
 
 
@@ -247,15 +290,171 @@ def map_band_name(from_sensor: str, to_sensor: str, band_name: str) -> str | Non
 
 def print_sensor_comparison():
     """Print a comparison table of all sensors."""
-    print(f"\n{'Sensor':<16} {'Resolution':>10} {'Bands':>6} {'Blue(B02)':>10} {'SWIR':>5} {'RedEdge':>7} {'Cost':>8}")
-    print("-" * 70)
-    for name, cfg in SENSOR_REGISTRY.items():
+    header = (
+        f"\n{'Sensor':<16} {'Resolution':>10} {'Bands':>6} {'Blue(B02)':>10} "
+        f"{'SWIR':>5} {'RedEdge':>7} {'Cost':>8} {'Entitlement':>14}"
+    )
+    print(header)
+    print("-" * len(header))
+    for _name, cfg in SENSOR_REGISTRY.items():
         blue_res = cfg.bands["B02"].resolution_m
         n_bands = len(cfg.bands)
         swir = "Yes" if cfg.has_swir else "No"
         red_edge = "Yes" if cfg.has_red_edge else "No"
         cost = "Free" if cfg.provider in ("microsoft_pc", "cdse") else "Commercial"
-        print(f"  {cfg.display_name:<14} {blue_res:>7.1f}m {n_bands:>5} {blue_res:>7.1f}m {swir:>5} {red_edge:>7} {cost:>8}")
+        row = (
+            f"  {cfg.display_name:<14} {blue_res:>7.1f}m {n_bands:>5} "
+            f"{blue_res:>7.1f}m {swir:>5} {red_edge:>7} {cost:>8} {cfg.entitlement:>14}"
+        )
+        print(row)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Entitlement / credential resolution
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class ResolvedCredentials:
+    """What credential material a caller actually needs for a sensor."""
+
+    sensor: str
+    entitlement: Entitlement
+    # OAuth client_credentials tuple, populated when entitlement is one of the
+    # OAuth-backed modes.  None otherwise.
+    oauth_client_id: str | None = None
+    oauth_client_secret: str | None = None
+    oauth_token_url: str | None = None
+    # Personal/developer Planet API key — search-only.  Populated ONLY when
+    # the sensor's entitlement is `planet_search` AND the user explicitly opts
+    # in by also setting PLANET_API_KEY.  Never used as a fallback for
+    # `planet_orders` or `sh_process`.
+    planet_api_key: str | None = None
+    # True when no credential material was found and the caller cannot proceed.
+    missing: bool = False
+    notes: str = ""
+
+
+def resolve_sensor_credentials(sensor_name: str) -> ResolvedCredentials:
+    """Resolve the credentials required to access *sensor_name*.
+
+    The function enforces the entitlement declared on the SensorConfig entry:
+
+      * `free`         — no credentials needed.
+      * `wms`          — no credentials; caller must be on the DGT private
+                         network (the WMS endpoint is IP-restricted).
+      * `stac_search`  — no credentials; DGT STAC catalogue is IP-restricted.
+      * `planet_search`— requires PLANET_CLIENT_ID + PLANET_CLIENT_SECRET
+                         (DGT-Planet / ESA-TPM contract). PLANET_API_KEY is
+                         accepted only if no OAuth pair is set, with a loud
+                         warning, because the API key is personal/search-only.
+      * `planet_orders`— requires PLANET_CLIENT_ID + PLANET_CLIENT_SECRET.
+                         PLANET_API_KEY is NEVER accepted — refusing to
+                         silently fall through to a personal key is the whole
+                         point of this helper.
+      * `sh_process`   — requires the sensor-specific OAuth pair configured
+                         on the SensorConfig (e.g. CDSE_CLIENT_ID/_SECRET).
+
+    Raises ValueError if *sensor_name* is unknown.
+    Returns a ResolvedCredentials with ``missing=True`` when the entitlement
+    requires credentials that are not set in the environment.
+    """
+    cfg = get_sensor(sensor_name)
+    e = cfg.entitlement
+
+    if e in ("free", "wms", "stac_search"):
+        return ResolvedCredentials(
+            sensor=sensor_name, entitlement=e,
+            notes="No credentials required.",
+        )
+
+    if e == "planet_search":
+        cid = os.environ.get(_PLANET_CLIENT_ID_ENV, "")
+        csec = os.environ.get(_PLANET_CLIENT_SECRET_ENV, "")
+        if cid and csec:
+            return ResolvedCredentials(
+                sensor=sensor_name, entitlement=e,
+                oauth_client_id=cid, oauth_client_secret=csec,
+                oauth_token_url=_PLANET_TOKEN_URL,
+                notes="Planet OAuth (DGT-Planet / ESA-TPM contract).",
+            )
+        # Fallback to personal API key — search only. Loud warning.
+        personal = os.environ.get(_PLANET_API_KEY_ENV, "")
+        if personal:
+            log.warning(
+                "Sensor '%s' has entitlement='planet_search' but no PLANET_CLIENT_ID/"
+                "PLANET_CLIENT_SECRET pair is set. Falling back to PLANET_API_KEY "
+                "(personal/developer, search-only — DO NOT use for asset download or "
+                "Orders). Ask the DGT HPC team for an institutional OAuth client.",
+                sensor_name,
+            )
+            return ResolvedCredentials(
+                sensor=sensor_name, entitlement=e,
+                planet_api_key=personal,
+                notes="Personal Planet API key — search only, not for Orders.",
+            )
+        return ResolvedCredentials(
+            sensor=sensor_name, entitlement=e, missing=True,
+            notes=(
+                "Planet OAuth credentials not set. Required for planet_search: "
+                f"{_PLANET_CLIENT_ID_ENV} + {_PLANET_CLIENT_SECRET_ENV} "
+                f"(preferred) or {_PLANET_API_KEY_ENV} (search-only fallback)."
+            ),
+        )
+
+    if e == "planet_orders":
+        cid = os.environ.get(_PLANET_CLIENT_ID_ENV, "")
+        csec = os.environ.get(_PLANET_CLIENT_SECRET_ENV, "")
+        if not (cid and csec):
+            # CRITICAL: do NOT accept PLANET_API_KEY for orders. The personal key
+            # would silently fail mid-pipeline or — worse — bill the developer's
+            # account. Refuse loudly instead.
+            return ResolvedCredentials(
+                sensor=sensor_name, entitlement=e, missing=True,
+                notes=(
+                    f"Planet Orders requires OAuth ({_PLANET_CLIENT_ID_ENV} + "
+                    f"{_PLANET_CLIENT_SECRET_ENV}). PLANET_API_KEY is NEVER accepted "
+                    "for planet_orders — it is a personal/developer key without "
+                    "download entitlement. Ask the DGT HPC team for an institutional "
+                    "OAuth client issued under the DGT-Planet / ESA-TPM contract."
+                ),
+            )
+        return ResolvedCredentials(
+            sensor=sensor_name, entitlement=e,
+            oauth_client_id=cid, oauth_client_secret=csec,
+            oauth_token_url=_PLANET_TOKEN_URL,
+            notes="Planet OAuth Orders (DGT-Planet / ESA-TPM contract).",
+        )
+
+    if e == "sh_process":
+        if not (cfg.oauth_id_env and cfg.oauth_secret_env and cfg.oauth_token_url):
+            return ResolvedCredentials(
+                sensor=sensor_name, entitlement=e, missing=True,
+                notes=(
+                    f"Sensor '{sensor_name}' declares entitlement='sh_process' but its "
+                    "SensorConfig is missing oauth_id_env / oauth_secret_env / "
+                    "oauth_token_url. Configure them before use."
+                ),
+            )
+        cid = os.environ.get(cfg.oauth_id_env, "")
+        csec = os.environ.get(cfg.oauth_secret_env, "")
+        if not (cid and csec):
+            return ResolvedCredentials(
+                sensor=sensor_name, entitlement=e, missing=True,
+                notes=(
+                    f"Sentinel Hub OAuth credentials not set. Required: "
+                    f"{cfg.oauth_id_env} + {cfg.oauth_secret_env}."
+                ),
+            )
+        return ResolvedCredentials(
+            sensor=sensor_name, entitlement=e,
+            oauth_client_id=cid, oauth_client_secret=csec,
+            oauth_token_url=cfg.oauth_token_url,
+            notes="Sentinel Hub OAuth (CDSE / commercial).",
+        )
+
+    # pragma: no cover — exhaustive Literal
+    return ResolvedCredentials(sensor=sensor_name, entitlement=e, missing=True,
+                               notes=f"Unknown entitlement: {e!r}")
 
 
 if __name__ == "__main__":

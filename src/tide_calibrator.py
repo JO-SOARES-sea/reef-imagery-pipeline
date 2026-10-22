@@ -15,7 +15,7 @@ Fallback Strategy:
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def get_tide_offset(date_str: str, lat: float, lon: float) -> float:
 
         # Ensure UTC
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
     except ValueError as e:
         log.error("Failed to parse date string '%s': %s", date_str, e)
         return 0.0
@@ -67,7 +67,7 @@ def get_tide_offset(date_str: str, lat: float, lon: float) -> float:
 
         # Simplified M2 Tide Calculation (Robust Fallback)
         # Calculate hours since a known reference epoch (e.g., 2000-01-01 00:00:00 UTC)
-        epoch = datetime(2000, 1, 1, tzinfo=timezone.utc)
+        epoch = datetime(2000, 1, 1, tzinfo=UTC)
         hours_since_epoch = (dt - epoch).total_seconds() / 3600.0
 
         # Phase calculation

@@ -14,7 +14,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
 import rasterio
 from rasterio.transform import Affine
 
@@ -27,7 +26,6 @@ sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 # Import once at module level — no importlib.reload().
 # The module is not mutated between tests so a single import is stable.
 import reef_imagery_pipeline_v3 as v3
-
 
 # ---------------------------------------------------------------------------
 # Helpers

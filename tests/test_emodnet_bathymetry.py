@@ -13,7 +13,6 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -114,14 +113,14 @@ class TestBuildHabitatMask:
         return dp, tp
 
     def test_shallow_high_tri_classified_reef(self, tmp_path):
-        from src.emodnet_bathymetry import build_habitat_mask, DEFAULT_TRI_REEF
+        from src.emodnet_bathymetry import DEFAULT_TRI_REEF, build_habitat_mask
         dp, tp = self._build_pair(tmp_path, depth_val=-5.0, tri_val=DEFAULT_TRI_REEF + 0.2)
         result = build_habitat_mask(dp, tp)
         assert result["n_reef_px"] > 0
         assert result["n_sand_px"] == 0
 
     def test_shallow_low_tri_classified_sand(self, tmp_path):
-        from src.emodnet_bathymetry import build_habitat_mask, DEFAULT_TRI_REEF
+        from src.emodnet_bathymetry import DEFAULT_TRI_REEF, build_habitat_mask
         dp, tp = self._build_pair(tmp_path, depth_val=-5.0, tri_val=DEFAULT_TRI_REEF - 0.1)
         result = build_habitat_mask(dp, tp)
         assert result["n_sand_px"] > 0
@@ -138,7 +137,7 @@ class TestBuildHabitatMask:
 
     def test_reef_frac_sums_with_sand_frac(self, tmp_path):
         """reef_frac + sand_frac must equal 1.0 when all pixels are in the optical window."""
-        from src.emodnet_bathymetry import build_habitat_mask, DEFAULT_TRI_REEF
+        from src.emodnet_bathymetry import DEFAULT_TRI_REEF, build_habitat_mask
         depth = np.where(
             np.arange(100).reshape(10, 10) < 50,
             -5.0,    # shallow (reef or sand)

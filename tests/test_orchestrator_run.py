@@ -22,24 +22,19 @@ Run:
 
 import math
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import rasterio
-from rasterio.transform import from_origin
-from rasterio.crs import CRS
 
 _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 # ── Canonical imports (physics now lives in utils.py) ────────────────────────
-from src.utils import snell_sza, optical_path, simulate_acolite_boa
-from src.orchestrator_run import _normalise_result, METADATA, TARGET_LAT, TARGET_LON
-from src.constants import N_WATER, KD490_TABLE
+from src.constants import KD490_TABLE, N_WATER
+from src.orchestrator_run import _normalise_result
+from src.utils import optical_path, snell_sza
 
 
 # ── Thin compatibility shim so old test helpers keep working ─────────────────
@@ -348,9 +343,10 @@ class TestAnalyseBand:
 # Phase 4 — terrain loading + modifier integration tests
 # =============================================================================
 
+
 import pandas as pd
-import tempfile, json, os
-from src.orchestrator_run import load_config, _normalise_result
+
+from src.orchestrator_run import load_config
 
 
 class TestLoadConfig:
@@ -435,7 +431,6 @@ class TestTerrainCsvLoading:
 
     def test_terrain_modifier_applied_to_score(self, tmp_path):
         """Simulate orchestrator terrain modifier logic with a mock CSV."""
-        import pandas as pd
         from src.ranking_model import terrain_exposure_modifier
 
         fake_csv = tmp_path / "terrain.csv"
@@ -470,6 +465,7 @@ class TestCmemsActivationTimeout:
 
     def test_hang_returns_within_timeout_plus_buffer(self, monkeypatch):
         import time
+
         from src import orchestrator_run
 
         # Sleep longer than the timeout so the worker is still running
