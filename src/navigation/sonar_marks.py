@@ -21,7 +21,8 @@ DEFAULT_CATALOG_GPX = PROJECT_ROOT / "data" / "vector" / "sonar_marks_catalog.gp
 def parse_coordinates(coord_str: str) -> tuple[float, float]:
     """
     Interpreta coordenadas em múltiplos formatos comuns na navegação e plotters:
-      - DMM com vírgulas/pontos: "n36,57,898 007,57,579w" ou "36°57.898'N 007°57.579'W"
+      - DMM com vírgulas/pontos: "n36,57,898 007,57,579w" ou "36,57,853n 00758,610w"
+      - DMM padrão: "36°57.898'N 007°57.579'W" ou "36°57,898' N 007°57,579' W"
       - Separado por espaço/hífen: "N 36 57.898 W 07 57.579"
       - Decimal direto: "36.964967, -7.959650" ou "36.964967 -7.959650"
     Retorna:
@@ -39,7 +40,6 @@ def parse_coordinates(coord_str: str) -> tuple[float, float]:
     clean = s.replace("°", " ").replace("'", " ").replace('"', " ").replace("’", " ")
 
     # Padrão flexível para DMM (Graus e Minutos Decimais)
-    # Suporta: [N/S] graus [,.] minutos [N/S] e [W/E/O] graus [,.] minutos [W/E/O]
     pattern = re.compile(
         r"([NSns]?)\s*(\d{1,2})[,\s]+(\d{1,2}(?:[.,]\d+)?)\s*([NSns]?)[,\s/]+"
         r"([WEOweo]?)\s*(\d{1,3})[,\s]+(\d{1,2}(?:[.,]\d+)?)\s*([WEOweo]?)",
@@ -47,34 +47,93 @@ def parse_coordinates(coord_str: str) -> tuple[float, float]:
     )
 
     m = pattern.search(clean)
-    if not m:
-        # Tenta split mais solto se vier apenas números com hemisférios
-        # Ex: "n36,57,898 007,57,579w" -> extrai partes norte e oeste
-        tokens = re.findall(r"[NSWEOnsweo]?\d+(?:[.,]\d+)?", s)
-        if len(tokens) >= 2:
-            return _parse_loose_tokens(tokens)
-        raise ValueError(
-            f"Não foi possível interpretar a coordenada: '{coord_str}'. "
-            f"Exemplos válidos: 'n36,57,898 007,57,579w' ou '36.964967, -7.959650'"
-        )
+    if m:
+        ns_pre, lat_d, lat_m, ns_post, we_pre, lon_d, lon_m, we_post = m.groups()
+        lat_min_float = float(lat_m.replace(",", "."))
+        lon_min_float = float(lon_m.replace(",", "."))
 
-    ns_pre, lat_d, lat_m, ns_post, we_pre, lon_d, lon_m, we_post = m.groups()
+        lat_deg = float(lat_d) + (lat_min_float / 60.0)
+        lon_deg = float(lon_d) + (lon_min_float / 60.0)
 
-    lat_min_float = float(lat_m.replace(",", "."))
-    lon_min_float = float(lon_m.replace(",", "."))
+        ns = (ns_pre or ns_post or "N").upper()
+        we = (we_pre or we_post or "W").upper()
 
-    lat_deg = float(lat_d) + (lat_min_float / 60.0)
-    lon_deg = float(lon_d) + (lon_min_float / 60.0)
+        if ns == "S":
+            lat_deg = -lat_deg
+        if we in ("W", "O"):
+            lon_deg = -lon_deg
 
-    ns = (ns_pre or ns_post or "N").upper()
-    we = (we_pre or we_post or "W").upper()
+        return lat_deg, lon_deg
 
-    if ns == "S":
-        lat_deg = -lat_deg
-    if we in ("W", "O"):
-        lon_deg = -lon_deg
+    # 2. Split por tokens soltos ou formato colado como '36,57,853n 00758,610w'
+    raw_tokens = [p for p in re.split(r"[\s/;\t]+", s) if p]
+    if len(raw_tokens) == 2:
+        return _parse_two_raw_tokens(raw_tokens[0], raw_tokens[1])
 
-    return lat_deg, lon_deg
+    tokens = re.findall(r"[NSWEOnsweo]?\d+(?:[.,]\d+)?", s)
+    if len(tokens) >= 2:
+        return _parse_loose_tokens(tokens)
+
+    raise ValueError(
+        f"Não foi possível interpretar a coordenada: '{coord_str}'. "
+        f"Exemplos válidos: '36,57,853n 00758,610w', 'n36,57,898 007,57,579w' ou '36.964967, -7.959650'"
+    )
+
+
+def _parse_single_component(tok: str) -> tuple[float, str | None]:
+    tok = tok.strip()
+    hemi = None
+    m_h = re.search(r"[NSWEOnsweo]", tok)
+    if m_h:
+        hemi = m_h.group(0).upper()
+        tok = re.sub(r"[NSWEOnsweo]", "", tok)
+    tok = tok.replace("°", " ").replace("'", " ").replace('"', " ").replace("’", " ").strip()
+
+    parts = [p for p in re.split(r"[,.\s]+", tok) if p]
+    if len(parts) == 3:
+        deg = float(parts[0])
+        minutes = float(f"{parts[1]}.{parts[2]}")
+        val = deg + minutes / 60.0
+    elif len(parts) == 2:
+        p0, p1 = parts[0], parts[1]
+        if len(p0) == 5:  # DDDMM, ex: '00758', '610'
+            deg = float(p0[:3])
+            minutes = float(f"{p0[3:]}.{p1}")
+            val = deg + minutes / 60.0
+        elif len(p0) == 4 and (hemi in ("N", "S") or float(p0) > 100):  # DDMM
+            deg = float(p0[:2])
+            minutes = float(f"{p0[2:]}.{p1}")
+            val = deg + minutes / 60.0
+        else:
+            val = float(f"{p0}.{p1}")
+    elif len(parts) == 1:
+        val = float(parts[0])
+    else:
+        raise ValueError(f"Componente inválido: {tok}")
+
+    return val, hemi
+
+
+def _parse_two_raw_tokens(tok1: str, tok2: str) -> tuple[float, float]:
+    v1, h1 = _parse_single_component(tok1)
+    v2, h2 = _parse_single_component(tok2)
+
+    if h1 in ("N", "S") or h2 in ("W", "E", "O"):
+        lat_val, lat_h = v1, h1
+        lon_val, lon_h = v2, h2
+    elif h2 in ("N", "S") or h1 in ("W", "E", "O"):
+        lat_val, lat_h = v2, h2
+        lon_val, lon_h = v1, h1
+    else:
+        lat_val, lat_h = v1, "N"
+        lon_val, lon_h = v2, "W"
+
+    if lat_h == "S":
+        lat_val = -abs(lat_val)
+    if lon_h in ("W", "O") or (lon_h is None and lon_val > 0 and lon_val < 20):
+        lon_val = -abs(lon_val)
+
+    return lat_val, lon_val
 
 
 def _parse_loose_tokens(tokens: list[str]) -> tuple[float, float]:
