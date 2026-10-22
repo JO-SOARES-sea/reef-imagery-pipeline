@@ -186,6 +186,12 @@ def run_zone_pipeline(
     # 6. Validação Cruzada com Ground Truth e Fundo Arenoso
     logger.info("Passo 6/6: Validando deteções contra Ground Truth e 2000 pontos aleatórios de fundo...")
     df_gt = pd.read_csv(cfg["ground_truth_path"])
+    dive_csv = PROJECT_ROOT / "data" / "vector" / "algarve_dive_sites.csv"
+    if dive_csv.exists():
+        df_dive = pd.read_csv(dive_csv)
+        df_gt = pd.concat([df_gt, df_dive], ignore_index=True)
+        df_gt = df_gt.drop_duplicates(subset=["lat", "lon"], keep="first")
+
     gdf_gt = gpd.GeoDataFrame(
         df_gt,
         geometry=gpd.points_from_xy(df_gt.lon, df_gt.lat),

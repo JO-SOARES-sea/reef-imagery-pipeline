@@ -210,6 +210,62 @@ def resample_emodnet_screen(
     return depth_m, depth_mask
 
 
+BENTHIC_SUBSTRATE_ENDMEMBERS = {
+    # Assinaturas espectrais de reflectância BOA [B02, B03, B04, B08] (UnderwaterVisibility / Lyzenga)
+    "sand": np.array([0.35, 0.38, 0.32, 0.045], dtype=np.float32),
+    "rock_algae": np.array([0.10, 0.13, 0.08, 0.15], dtype=np.float32),
+    "seagrass": np.array([0.13, 0.18, 0.08, 0.38], dtype=np.float32),
+}
+
+
+def compute_spectral_angle_mapper(
+    blue: np.ndarray,
+    green: np.ndarray,
+    red: np.ndarray,
+    nir: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calcula a semelhança angular espectral (SAM - Spectral Angle Mapper)
+    em relação às assinaturas de rocha com algas e areia marinha.
+    Retorna:
+      sam_rock_score: [0, 1] onde 1.0 é máxima proximidade espectral à rocha biogénica.
+      sam_sand_score: [0, 1] onde 1.0 é máxima proximidade à areia quartzosa.
+    """
+    stack = np.stack(
+        [
+            np.nan_to_num(blue, nan=0.0),
+            np.nan_to_num(green, nan=0.0),
+            np.nan_to_num(red, nan=0.0),
+            np.nan_to_num(nir, nan=0.0),
+        ],
+        axis=0,
+    )
+    norm = np.linalg.norm(stack, axis=0, keepdims=True) + 1e-6
+    unit_vec = stack / norm
+
+    def _angle_score(sig: np.ndarray) -> np.ndarray:
+        sig_unit = sig / (np.linalg.norm(sig) + 1e-6)
+        cos_theta = np.clip(
+            np.sum(unit_vec * sig_unit[:, None, None], axis=0), -1.0, 1.0
+        )
+        angle = np.arccos(cos_theta)
+        return np.clip(1.0 - (angle / (np.pi / 4.0)), 0.0, 1.0).astype(np.float32)
+
+    sam_rock = _angle_score(BENTHIC_SUBSTRATE_ENDMEMBERS["rock_algae"])
+    sam_sand = _angle_score(BENTHIC_SUBSTRATE_ENDMEMBERS["sand"])
+    return sam_rock, sam_sand
+
+
+def compute_coastal_turbidity_index(
+    red: np.ndarray,
+    green: np.ndarray,
+) -> np.ndarray:
+    """Calcula o rácio de turbidez estuarina/costeira B04/B03."""
+    with np.errstate(invalid="ignore", divide="ignore"):
+        turb = np.where(green > 0.005, red / green, 0.0)
+    return np.clip(turb, 0.0, 3.0).astype(np.float32)
+
+
 def extract_morpho_spectral_features(
     blue: np.ndarray,
     green: np.ndarray,
@@ -308,10 +364,14 @@ def extract_morpho_spectral_features(
         "gr_ratio": gr_ratio,
         "z_b02_b03": z_b02_b03,
         "z_b03_b04": z_b03_b04,
+        "turbidity": compute_coastal_turbidity_index(b4, b3),
     }
     if b8 is not None:
         features["B08"] = b8
         features["r_b08_b04"] = r_b08_b04
+        sam_rock, sam_sand = compute_spectral_angle_mapper(b2, b3, b4, b8)
+        features["sam_rock_score"] = sam_rock
+        features["sam_sand_score"] = sam_sand
 
     logger.info(f"{len(features)} features morfo-espectrais extraídas com sucesso.")
     return features

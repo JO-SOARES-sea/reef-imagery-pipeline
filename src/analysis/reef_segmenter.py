@@ -30,6 +30,7 @@ from src.analysis.features import extract_morpho_spectral_features, resample_emo
 from src.ingestion.sentinel_reader import build_clean_water_mask, read_sentinel_bands, save_geotiff
 
 logger = logging.getLogger("reef_pipeline.analysis.segmenter")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 DEFAULT_MODEL_FEATURES = [
     "sdb_vrm50",
@@ -38,6 +39,8 @@ DEFAULT_MODEL_FEATURES = [
     "B03_std30",
     "b3_anom",
     "gr_ratio",
+    "sam_rock_score",
+    "turbidity",
     "B02",
     "B03",
     "B04",
@@ -151,6 +154,20 @@ def train_multi_zone_classifier(
                 px, py = int(round(px)), int(round(py))
                 if 0 <= py < src.height and 0 <= px < src.width and analysis_mask[py, px]:
                     gt_pxs.append((py, px))
+
+            # Adiciona pontos de recifes de mergulho comprovados se incidirem nesta cena
+            dive_csv = PROJECT_ROOT / "data" / "vector" / "algarve_dive_sites.csv"
+            if dive_csv.exists():
+                df_dive = pd.read_csv(dive_csv)
+                gdf_dive = gpd.GeoDataFrame(
+                    df_dive, geometry=gpd.points_from_xy(df_dive.lon, df_dive.lat), crs="EPSG:4326"
+                ).to_crs(scene.crs)
+                for _, row in gdf_dive.iterrows():
+                    px, py = ~src.transform * (row.geometry.x, row.geometry.y)
+                    px, py = int(round(px)), int(round(py))
+                    if 0 <= py < src.height and 0 <= px < src.width and analysis_mask[py, px]:
+                        if (py, px) not in gt_pxs:
+                            gt_pxs.append((py, px))
 
         bg_candidates = analysis_mask.copy()
         for py, px in gt_pxs:
@@ -278,14 +295,15 @@ def evaluate_against_background(
     gt_rows: np.ndarray,
     gt_cols: np.ndarray,
     n_background: int = 2000,
-    exclusion_px: int = 15,
+    exclusion_px: int = 5,
     seed: int = 0,
+    threshold: float = 0.50,
 ) -> dict[str, Any]:
     """
     Validação estatística rigorosa:
     - Avalia valores de probabilidade EXATOS no pixel do Ground Truth (sem inflação 3x3 max).
-    - Amostra 1000 a 2000 pontos aleatórios de fundo marinho dentro da mesma cena a mais de 150 m (exclusion_px=15) de qualquer cume.
-    - Calcula o ROC-AUC exato, teste de hipótese Mann-Whitney U e separação de contraste.
+    - Amostra pontos aleatórios de fundo marinho dentro da mesma cena afastados do GT (exclusion_px).
+    - Calcula o ROC-AUC exato, teste de hipótese Mann-Whitney U, taxas de deteção e separação de contraste.
     """
     gt_rows = np.asarray(gt_rows, dtype=int)
     gt_cols = np.asarray(gt_cols, dtype=int)
@@ -293,7 +311,7 @@ def evaluate_against_background(
     valid = np.isfinite(reef_proba)
     proba_clean = np.where(valid, reef_proba, 0.0)
 
-    # Identifica pixels de fundo arenoso com exclusão estrita de 150m em redor do GT
+    # Identifica pixels de fundo arenoso com exclusão estrita em redor do GT
     candidates = analysis_mask & valid
     for r, c in zip(gt_rows, gt_cols, strict=True):
         candidates[max(0, r - exclusion_px) : r + exclusion_px + 1, max(0, c - exclusion_px) : c + exclusion_px + 1] = False
@@ -302,12 +320,16 @@ def evaluate_against_background(
     if len(gt_rows) == 0 or len(bg_r) == 0:
         logger.warning("Validação contra o fundo impossível: sem pontos GT ou sem pixels de fundo.")
         return {
+            "auc": None,
             "auc_exact": None,
             "auc_3x3_max": None,
+            "gt_detection_rate": None,
+            "bg_detection_rate": None,
             "p_value": None,
             "gt_median": None,
             "bg_median": None,
             "delta_contrast": None,
+            "fpr5_thresh": None,
             "recall_fpr5": None,
             "recall_fpr10": None,
             "n_gt": len(gt_rows),
@@ -332,6 +354,10 @@ def evaluate_against_background(
     bg_med = float(np.median(bg_scores_exact))
     delta = gt_med - bg_med
 
+    # Taxas de deteção no limiar fixo especificado
+    gt_det_rate = float(np.mean(gt_scores_exact >= threshold))
+    bg_det_rate = float(np.mean(bg_scores_exact >= threshold))
+
     # Taxa de deteção em pontos de operação da ROC (FPR 5% e FPR 10%)
     fpr5_thresh = float(np.percentile(bg_scores_exact, 95))
     fpr10_thresh = float(np.percentile(bg_scores_exact, 90))
@@ -345,8 +371,11 @@ def evaluate_against_background(
     auc_3x3_max = float(roc_auc_score(labels, all_scores_3x3))
 
     return {
+        "auc": auc_exact,
         "auc_exact": auc_exact,
         "auc_3x3_max": auc_3x3_max,
+        "gt_detection_rate": gt_det_rate,
+        "bg_detection_rate": bg_det_rate,
         "p_value": float(p_val),
         "gt_median": gt_med,
         "bg_median": bg_med,

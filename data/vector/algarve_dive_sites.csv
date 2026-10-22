@@ -1,0 +1,15 @@
+nome,lat,lon,profundidade_m,tipo,zona
+Prainha,37.0912,-8.2277,8.0,rocky_point,albufeira_oeste
+Barranco do Cerebéro,37.0840,-8.2130,10.0,canyon_wall,albufeira
+Gralha,37.0730,-8.2050,12.0,rocky_reef,santa_eulalia
+Ilha do Belixe,37.0715,-8.2020,6.0,island_reef,santa_eulalia
+Jangada,37.0673,-8.1933,9.0,rocky_reef,olhos_de_agua
+Maria,37.0642,-8.1885,8.0,reef_ball,olhos_de_agua
+Pedra do Silgueiro,37.0718,-8.1820,11.0,rocky_outcrop,olhos_de_agua
+Lusitânia,37.0753,-8.1735,14.0,artificial_reef,vilamoura_oeste
+Almargem,37.0720,-8.1785,7.0,seagrass_rock,quarteira
+Vilamoura Bureka,37.0728,-8.1667,6.0,rocky_ledge,vilamoura
+Cerro das Brancas,37.0810,-8.2200,13.0,rocky_ridge,albufeira_leste
+Ponta da Perna,37.0785,-8.2150,11.0,cliff_face,albufeira_leste
+Casa de Pedra,37.0730,-8.1900,10.0,boulder_field,olhos_de_agua
+Lagoa dos Afros,37.0760,-8.1870,9.0,rocky_cresta,olhos_de_agua
