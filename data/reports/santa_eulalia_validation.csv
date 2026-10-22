@@ -1,0 +1,7 @@
+lon,lat,emodnet_depth_m,proba_exact,proba_3x3_max,nome,tipo,is_detected_fpr5
+-8.210242,37.069081,9.9,0.637,0.637,Ponto_0,ground_truth,True
+-8.20982,37.05815,14.7,0.41,0.41,Ponto_1,ground_truth,True
+-8.2105,37.069,9.9,0.528,0.528,Ponto_2,ground_truth,True
+-8.2388,37.0818,3.0,0.611,0.611,Ponto_3,ground_truth,True
+-8.2478,37.0751,11.0,0.6,0.6,Ponto_4,ground_truth,True
+-8.19,37.085,5.2,0.583,0.583,Ponto_5,ground_truth,True

@@ -102,21 +102,50 @@ def compute_bpi(depth_proxy: np.ndarray, r_in: int = 5, r_out: int = 10) -> np.n
 def compute_vrm(depth_proxy: np.ndarray, h: int = 2) -> np.ndarray:
     """
     Calcula o Vector Ruggedness Measure (VRM) de Sappington et al. (2007) numa janela (2h+1)x(2h+1).
+    Utiliza float64 para evitar cancelamento catastrófico em pequenos gradientes batimétricos.
     h=2 -> Janela 5x5 pixels (50 m).
     """
     gx, gy = _sobel(depth_proxy)
-    s = np.arctan(np.hypot(gx, gy))
-    a = np.arctan2(gy, gx)
-    nx, ny, nz = np.sin(s) * np.cos(a), np.sin(s) * np.sin(a), np.cos(s)
+    gx64, gy64 = gx.astype(np.float64), gy.astype(np.float64)
+    slope = np.hypot(gx64, gy64)
+    aspect = np.arctan2(gy64, gx64)
+
+    sin_s = np.sin(np.arctan(slope))
+    cos_s = np.cos(np.arctan(slope))
+    nx = sin_s * np.cos(aspect)
+    ny = sin_s * np.sin(aspect)
+    nz = cos_s
 
     fp = square(h)
-    mx = focal_mean(nx, fp)
-    my = focal_mean(ny, fp)
-    mz = focal_mean(nz, fp)
+    mx = focal_mean(nx, fp).astype(np.float64)
+    my = focal_mean(ny, fp).astype(np.float64)
+    mz = focal_mean(nz, fp).astype(np.float64)
 
     r = np.sqrt(mx * mx + my * my + mz * mz)
-    vrm = 1.0 - r
+    vrm = np.maximum(0.0, 1.0 - r)
     return np.where(np.isfinite(depth_proxy), vrm, np.nan).astype(np.float32)
+
+
+def calibrate_sdb_depth(
+    psdb: np.ndarray,
+    depth_emodnet: np.ndarray | None = None,
+    water_mask: np.ndarray | None = None,
+) -> np.ndarray:
+    """
+    Calibra o índice relativo pSDB para profundidade física estimada em metros (Stumpf et al., 2003).
+    Se depth_emodnet estiver disponível, ajusta linearmente z = m1 * psdb + m0 na faixa de interesse.
+    """
+    if depth_emodnet is not None and water_mask is not None:
+        valid = water_mask & np.isfinite(psdb) & np.isfinite(depth_emodnet) & (depth_emodnet > 3.0) & (depth_emodnet < 22.0)
+        if np.sum(valid) > 500:
+            from scipy import stats
+            slope_fit, intercept_fit, _, _, _ = stats.linregress(psdb[valid], depth_emodnet[valid])
+            if slope_fit > 0:
+                sdb_m = slope_fit * psdb + intercept_fit
+                return np.clip(sdb_m, 1.0, 35.0).astype(np.float32)
+    # Calibração empírica padrão da costa do Algarve (águas límpidas)
+    sdb_m = 22.0 * psdb - 17.0
+    return np.clip(sdb_m, 1.0, 35.0).astype(np.float32)
 
 
 def compute_curv(depth_proxy: np.ndarray) -> np.ndarray:
@@ -187,10 +216,11 @@ def extract_morpho_spectral_features(
     red: np.ndarray,
     nir: np.ndarray | None = None,
     water_mask: np.ndarray | None = None,
+    depth_emodnet: np.ndarray | None = None,
 ) -> dict[str, np.ndarray]:
     """
     Extrai o conjunto estendido de features morfo-espectrais submarinas,
-    incorporando a arquitetura M5_relative e invariância cross-scene de UnderwaterVisibility.
+    incorporando a arquitetura M5_relative, calibração física SDB e VRM 3D em float64.
     """
     logger.info("Extraindo features morfo-espectrais avançadas do Sentinel-2...")
 
@@ -200,13 +230,22 @@ def extract_morpho_spectral_features(
     b4 = np.where(water_mask, red, np.nan) if water_mask is not None else red
     b8 = np.where(water_mask, nir, np.nan) if (water_mask is not None and nir is not None) else nir
 
-    # 1. Morfometria baseada em pSDB (Stumpf et al., 2003)
+    # 1. Morfometria baseada em pSDB (Stumpf et al., 2003) e SDB calibrada em metros
     psdb = compute_psdb(b2, b3)
+    sdb_m = calibrate_sdb_depth(psdb, depth_emodnet=depth_emodnet, water_mask=water_mask)
+
+    # Métricas derivadas em metros (evitam desvanecimento por gradientes infinitesimais)
+    sdb_slope = compute_slope(sdb_m)
+    sdb_bpi100 = compute_bpi(sdb_m, r_in=5, r_out=10)   # 50 m a 100 m
+    sdb_bpi200 = compute_bpi(sdb_m, r_in=10, r_out=20) # 100 m a 200 m
+    sdb_vrm50 = compute_vrm(sdb_m, h=2)                # Rugosidade 3D (50 m) em float64
+
+    # Morfometria direta sobre psdb
     slope = compute_slope(psdb)
-    bpi100 = compute_bpi(psdb, r_in=5, r_out=10)   # 50 m a 100 m
-    bpi200 = compute_bpi(psdb, r_in=10, r_out=20) # 100 m a 200 m
-    vrm50 = compute_vrm(psdb, h=2)                # Rugosidade 3D (50 m)
-    curv100 = compute_curv(psdb)                  # Curvatura/Laplaciano (110 m)
+    bpi100 = compute_bpi(psdb, r_in=5, r_out=10)
+    bpi200 = compute_bpi(psdb, r_in=10, r_out=20)
+    vrm50 = compute_vrm(psdb, h=2)
+    curv100 = compute_curv(psdb)
 
     # 2. Texturas focais (rugosidade espectral do fundo rochoso)
     b02_std30 = compute_focal_std(b2, h=1)
@@ -214,14 +253,19 @@ def extract_morpho_spectral_features(
     b02_std50 = compute_focal_std(b2, h=2)
     b03_std50 = compute_focal_std(b3, h=2)
 
+    # Contraste local de alta frequência (anomalia em relação ao fundo suave vizinho)
+    mean_val = float(np.nanmean(b3[np.isfinite(b3)])) if np.any(np.isfinite(b3)) else 0.03
+    b3_sm = ndi.gaussian_filter(np.nan_to_num(b3, nan=mean_val), sigma=5)
+    b3_anom = np.where(np.isfinite(b3), b3 - b3_sm, np.nan).astype(np.float32)
+
     # 3. Rácios espectrais fundamentais
     with np.errstate(invalid="ignore", divide="ignore"):
         r_b03_b02 = np.where((b2 > 0.001) & np.isfinite(b2), b3 / b2, np.nan)
         r_b04_b03 = np.where((b3 > 0.001) & np.isfinite(b3), b4 / b3, np.nan)
+        gr_ratio = np.where((b4 > 0.005) & np.isfinite(b4), b3 / b4, np.nan)
         r_b08_b04 = np.where((b4 > 0.001) & np.isfinite(b4) & (b8 is not None), (b8 if b8 is not None else 0.0) / b4, np.nan)
 
     # 4. Z-Score Relative Features (M5_relative arm de UnderwaterVisibility)
-    # Normaliza cada rácio na coluna de água da cena, eliminando desvios de radiometria sazonal
     def _zscore_water(arr: np.ndarray) -> np.ndarray:
         if water_mask is None:
             valid = arr[np.isfinite(arr)]
@@ -244,6 +288,11 @@ def extract_morpho_spectral_features(
         "B03": b3,
         "B04": b4,
         "psdb": psdb,
+        "sdb_m": sdb_m,
+        "sdb_slope": sdb_slope,
+        "sdb_bpi100": sdb_bpi100,
+        "sdb_bpi200": sdb_bpi200,
+        "sdb_vrm50": sdb_vrm50,
         "psdb_slope": slope,
         "psdb_bpi100": bpi100,
         "psdb_bpi200": bpi200,
@@ -253,8 +302,10 @@ def extract_morpho_spectral_features(
         "B03_std30": b03_std30,
         "B02_std50": b02_std50,
         "B03_std50": b03_std50,
+        "b3_anom": b3_anom,
         "r_b03_b02": r_b03_b02,
         "r_b04_b03": r_b04_b03,
+        "gr_ratio": gr_ratio,
         "z_b02_b03": z_b02_b03,
         "z_b03_b04": z_b03_b04,
     }

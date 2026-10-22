@@ -209,28 +209,31 @@ def build_glint_mask(
     green: np.ndarray,
     nir: np.ndarray | None = None,
     window: int = 5,
-    var_thresh: float = 0.20,
-    nir_thresh: float = 0.08,
+    var_thresh: float = 0.15,
+    nir_thresh: float | None = None,
+    dilate_anomaly_px: int = 1,
 ) -> np.ndarray:
     """
-    Identifica e mascara zonas de rebentação costeira, ondas com espuma e reflexos solares (sun glint).
-    Adaptação do algoritmo de pré-filtragem costeira desenvolvido em UnderwaterVisibility (OSU-SAI-Lab).
+    Mascara esteiras de embarcações, espuma de ondas e brilho solar (sunglint) na superfície marinha com a banda B08 (NIR).
 
-    Diferencia com precisão recifes submersos de espuma de ondas:
-    - Recifes submersos: Apresentam variação espectral em verde mas NIR praticamente nulo (absorção pela água).
-    - Espuma/Arrebentação/Glint: Apresentam reflectância NIR elevada (> 0.08) conjuntamente com alta variância local.
+    Fundamento Físico (Hedley et al., 2005 / Lyzenga, 1981):
+    A água pura ou costeira limpa absorve quase 100% da radiação no infravermelho próximo (B08, 842 nm).
+    Qualquer pixel na água com reflectância B08 significativamente superior ao baseline límpido
+    corresponde a anomalia de superfície (esteira de barco, espuma de rebentação, glint solar ou cirro/nuvem fina).
 
     Args:
         green: Matriz NumPy da banda B03 em reflectância [0, 1].
         nir: Matriz NumPy da banda B08 (NIR) em reflectância [0, 1].
-        window: Dimensão da janela focal para cálculo da variância local (padrão 5x5 px = 50m).
-        var_thresh: Limiar do coeficiente de variação para ruído extremo (padrão 0.20).
-        nir_thresh: Limiar de reflectância NIR acima do qual é espuma/glint (padrão 0.08).
+        window: Dimensão da janela focal para cálculo da variância local (padrão 5x5 px = 50 m).
+        var_thresh: Limiar do coeficiente de variação para ruído de textura de superfície.
+        nir_thresh: Limiar estrito de reflectância NIR. Se None, é calculado adaptativamente
+                    a partir do baseline de água límpida da cena (Hedley baseline + margem).
+        dilate_anomaly_px: Raio de dilatação morfológica para limpar franjas de espuma e esteiras.
 
     Returns:
-        Matriz booleana onde True = Água calma e límpida (válida para SDB/detetor de recifes).
+        Matriz booleana onde True = Água calma com fundo visível (sem glint nem esteiras).
     """
-    from scipy.ndimage import uniform_filter
+    from scipy.ndimage import binary_dilation, uniform_filter
 
     g = np.nan_to_num(green, nan=0.0).astype(np.float32)
     mean = uniform_filter(g, size=window, mode="reflect")
@@ -240,15 +243,40 @@ def build_glint_mask(
 
     if nir is not None:
         n = np.nan_to_num(nir, nan=0.0).astype(np.float32)
-        # Espuma e rebentação: NIR alto ou combinação de NIR anómalo com alta variabilidade
-        is_foam_or_glint = (n > nir_thresh) | ((n > 0.04) & (cv > var_thresh))
-        clean_mask = ~is_foam_or_glint
+        
+        # Determina o limiar adaptativo de NIR para água limpa caso nir_thresh seja None
+        if nir_thresh is None:
+            rough_water = (g > n) & (n < 0.15) & (g > 0.01)
+            if np.sum(rough_water) > 100:
+                p5 = float(np.percentile(n[rough_water], 5))
+                eff_nir_thresh = max(0.035, min(0.065, p5 + 0.022))
+                var_cutoff_nir = p5 + 0.012
+            else:
+                eff_nir_thresh = 0.035
+                var_cutoff_nir = 0.025
+        else:
+            eff_nir_thresh = nir_thresh
+            var_cutoff_nir = max(0.020, eff_nir_thresh - 0.010)
+
+        # Anomalias: reflectância NIR anómala ou combinação de NIR elevado com alta turbilhonância (esteiras)
+        is_anomaly = (n > eff_nir_thresh) | ((n > var_cutoff_nir) & (cv > var_thresh))
+        
+        # Dilatação morfológica para englobar a franja difusa de espuma e esteiras de embarcações
+        if dilate_anomaly_px > 0:
+            footprint = np.ones((2 * dilate_anomaly_px + 1, 2 * dilate_anomaly_px + 1), dtype=bool)
+            is_anomaly = binary_dilation(is_anomaly, structure=footprint)
+            
+        clean_mask = ~is_anomaly
     else:
         clean_mask = cv < var_thresh
+        eff_nir_thresh = None
 
+    total_pixels = clean_mask.size
+    clean_count = int(np.sum(clean_mask))
+    thresh_str = f"{eff_nir_thresh:.4f} (adaptativo)" if eff_nir_thresh is not None else "N/A"
     logger.info(
-        f"Filtro de Glint/Espuma Costeira aplicado | Janela: {window}x{window} | "
-        f"Pixels limpos: {np.sum(clean_mask)}/{clean_mask.size}"
+        f"Máscara B08 (Glint/Esteiras/Espuma) aplicada | Limiar NIR: {thresh_str} | "
+        f"Pixels válidos com fundo visível: {clean_count}/{total_pixels} ({(clean_count/total_pixels)*100:.1f}%)"
     )
     return clean_mask
 
@@ -257,17 +285,18 @@ def build_clean_water_mask(
     scene: SentinelScene,
     ndwi_threshold: float = 0.0,
     apply_glint_filter: bool = True,
+    nir_thresh: float | None = None,
 ) -> np.ndarray:
     """
     Gera uma máscara de coluna de água estrita e limpa:
     1. NDWI isola o oceano da terra firme e falésias do Algarve.
-    2. Filtro de glint/espuma remove zonas de arrebentação na praia e reflexos solares.
+    2. Filtro de glint/espuma remove zonas de arrebentação na praia, esteiras de barcos e reflexos solares.
     """
     ndwi, water_mask = calculate_ndwi(scene.green, scene.nir, red=scene.red, threshold=ndwi_threshold)
     scene.ndwi = ndwi
 
     if apply_glint_filter:
-        glint_mask = build_glint_mask(scene.green, scene.nir)
+        glint_mask = build_glint_mask(scene.green, scene.nir, nir_thresh=nir_thresh)
         combined_mask = water_mask & glint_mask
     else:
         combined_mask = water_mask
