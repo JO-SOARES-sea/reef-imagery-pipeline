@@ -1,0 +1,55 @@
+id,zona,lat,lon,plotter,prof_EMODnet_m,px,duas_metades,EUSeaMap,dist_costa_m,classe
+V1,oeste (Alfanzina–Marinha),37.080134,-8.443638,"37°04,808' N 08°26,618' W",12.6–16.4,345,True,Rock or other hard substrata,624,"candidato (11–13 m, B08 com cautela)"
+V2,oeste (Alfanzina–Marinha),37.080949,-8.439362,"37°04,857' N 08°26,362' W",11.8–12.6,201,True,Rock or other hard substrata,466,"candidato (11–13 m, B08 com cautela)"
+V3,oeste (Alfanzina–Marinha),37.078857,-8.437909,"37°04,731' N 08°26,275' W",13.0–13.5,36,True,Rock or other hard substrata,705,forte candidato
+V4,oeste (Alfanzina–Marinha),37.079182,-8.433392,"37°04,751' N 08°26,004' W",11.6–12.8,145,True,Rock or other hard substrata,627,"candidato (11–13 m, B08 com cautela)"
+V5,oeste (Alfanzina–Marinha),37.081085,-8.41753,"37°04,865' N 08°25,052' W",12.8–13.2,17,True,Rock or other hard substrata,563,"candidato (11–13 m, B08 com cautela)"
+V6,oeste (Alfanzina–Marinha),37.075805,-8.413617,"37°04,548' N 08°24,817' W",13.4–13.5,4,False,Rock or other hard substrata,1232,candidato fraco (uma direção)
+V7,oeste (Alfanzina–Marinha),37.082329,-8.412043,"37°04,940' N 08°24,723' W",12.1–12.6,47,False,Rock or other hard substrata,644,candidato fraco (uma direção)
+V8,oeste (Alfanzina–Marinha),37.079304,-8.411488,"37°04,758' N 08°24,689' W",13.6–13.8,13,True,Rock or other hard substrata,957,forte candidato
+V9,oeste (Alfanzina–Marinha),37.075844,-8.407865,"37°04,551' N 08°24,472' W",13.9–14.2,16,False,Rock or other hard substrata,1442,candidato fraco (uma direção)
+V10,oeste (Alfanzina–Marinha),37.081484,-8.406644,"37°04,889' N 08°24,399' W",13.6–13.7,21,True,Rock or other hard substrata,810,forte candidato
+V11,oeste (Alfanzina–Marinha),37.069642,-8.402415,"37°04,179' N 08°24,145' W",13.9–14.3,4,False,Rock or other hard substrata,2156,candidato fraco (uma direção)
+V12,oeste (Alfanzina–Marinha),37.083257,-8.402265,"37°04,995' N 08°24,136' W",11.7–13.0,30,True,Rock or other hard substrata,681,"candidato (11–13 m, B08 com cautela)"
+V13,oeste (Alfanzina–Marinha),37.081065,-8.392042,"37°04,864' N 08°23,523' W",13.6–14.1,17,True,Rock or other hard substrata,1082,forte candidato
+V14,patamar do Valado,37.0547,-8.3718,"37°03,282' N 08°22,308' W",15.4–16.1,7,False,Rock or other hard substrata,4500,candidato fraco (uma direção)
+V15,patamar do Valado,37.056119,-8.363337,"37°03,367' N 08°21,800' W",14.9–15.4,27,True,Rock or other hard substrata,4612,forte candidato
+V16,patamar do Valado,37.054295,-8.359305,"37°03,258' N 08°21,558' W",14.7–15.1,8,False,Rock or other hard substrata,4613,candidato fraco (uma direção)
+V17,patamar do Valado,37.051808,-8.351895,"37°03,108' N 08°21,114' W",16.0–16.3,10,False,Rock or other hard substrata,4433,candidato fraco (uma direção)
+V18,patamar do Valado,37.064139,-8.344652,"37°03,848' N 08°20,679' W",18.1–18.2,6,False,Rock or other hard substrata,2973,candidato fraco (uma direção)
+V19,patamar do Valado,37.047521,-8.340371,"37°02,851' N 08°20,422' W",14.6–14.7,4,False,Rock or other hard substrata,4158,candidato fraco (uma direção)
+V20,patamar do Valado,37.067733,-8.339971,"37°04,064' N 08°20,398' W",14.5–14.9,6,False,Rock or other hard substrata,2404,candidato fraco (uma direção)
+V21,patamar do Valado,37.04641,-8.337412,"37°02,785' N 08°20,245' W",14.2–15.1,10,False,Rock or other hard substrata,4084,candidato fraco (uma direção)
+V22,patamar do Valado,37.055162,-8.335244,"37°03,310' N 08°20,115' W",17.6–17.9,9,False,Rock or other hard substrata,3217,candidato fraco (uma direção)
+V23,patamar do Valado,37.044558,-8.33426,"37°02,673' N 08°20,056' W",13.8–14.5,21,True,Rock or other hard substrata,4078,forte candidato
+V24,Galé–Albufeira,37.077326,-8.329187,"37°04,640' N 08°19,751' W",13.4–13.9,59,True,Sand,978,forte candidato
+V25,Galé–Albufeira,37.054736,-8.325823,"37°03,284' N 08°19,549' W",16.4–16.8,10,False,Rock or other hard substrata,2719,candidato fraco (uma direção)
+V26,Galé–Albufeira,37.055903,-8.321926,"37°03,354' N 08°19,316' W",16.1–16.7,33,True,Rock or other hard substrata,2429,forte candidato
+V27,Galé–Albufeira,37.057525,-8.321592,"37°03,451' N 08°19,296' W",15.2–15.4,5,False,Rock or other hard substrata,2258,candidato fraco (uma direção)
+V28,Galé–Albufeira,37.053798,-8.320084,"37°03,228' N 08°19,205' W",17.1–17.3,18,True,Rock or other hard substrata,2568,forte candidato
+V29,Galé–Albufeira,37.05949,-8.320078,"37°03,569' N 08°19,205' W",15.4–15.6,10,False,Rock or other hard substrata,2001,candidato fraco (uma direção)
+V30,Galé–Albufeira,37.063952,-8.315356,"37°03,837' N 08°18,921' W",16.6–17.0,22,True,Rock or other hard substrata,1366,forte candidato
+V31,Galé–Albufeira,37.056203,-8.314859,"37°03,372' N 08°18,892' W",15.5–15.8,6,False,Rock or other hard substrata,2142,candidato fraco (uma direção)
+V32,Galé–Albufeira,37.071689,-8.314288,"37°04,301' N 08°18,857' W",12.0–12.4,4,False,Sand,625,candidato fraco (uma direção)
+V33,Galé–Albufeira,37.063785,-8.308848,"37°03,827' N 08°18,531' W",16.3–16.5,9,False,Sand,1149,candidato fraco (uma direção)
+V34,Galé–Albufeira,37.036212,-8.308,"37°02,173' N 08°18,480' W",15.3–15.8,19,True,Rock or other hard substrata,4022,forte candidato
+V35,Galé–Albufeira,37.067721,-8.302386,"37°04,063' N 08°18,143' W",12.4–13.4,27,False,Rock or other hard substrata,540,candidato fraco (uma direção)
+V36,Galé–Albufeira,37.041831,-8.295588,"37°02,510' N 08°17,735' W",16.2–16.4,12,True,Rock or other hard substrata,3308,forte candidato
+V37,Galé–Albufeira,37.05892,-8.293969,"37°03,535' N 08°17,638' W",15.9–16.2,25,True,Rock or other hard substrata,1425,forte candidato
+V38,Galé–Albufeira,37.06352,-8.291609,"37°03,811' N 08°17,497' W",14.9–15.1,7,False,Rock or other hard substrata,980,candidato fraco (uma direção)
+V39,Galé–Albufeira,37.054627,-8.29088,"37°03,278' N 08°17,453' W",16.6–16.6,4,False,Rock or other hard substrata,1953,candidato fraco (uma direção)
+V40,Galé–Albufeira,37.065967,-8.289804,"37°03,958' N 08°17,388' W",13.7–13.8,8,False,Rock or other hard substrata,712,candidato fraco (uma direção)
+V41,Galé–Albufeira,37.062329,-8.288371,"37°03,740' N 08°17,302' W",14.6–14.9,47,False,Rock or other hard substrata,1073,candidato fraco (uma direção)
+V42,Galé–Albufeira,37.057379,-8.28748,"37°03,443' N 08°17,249' W",16.5–16.6,6,False,Rock or other hard substrata,1612,candidato fraco (uma direção)
+V43,Galé–Albufeira,37.061002,-8.282975,"37°03,660' N 08°16,979' W",14.9–14.9,4,False,Rock or other hard substrata,1241,candidato fraco (uma direção)
+V44,Galé–Albufeira,37.066035,-8.278952,"37°03,962' N 08°16,737' W",14.0–14.1,10,False,Rock or other hard substrata,840,candidato fraco (uma direção)
+V45,Galé–Albufeira,37.064913,-8.275901,"37°03,895' N 08°16,554' W",14.0–14.1,11,False,Rock or other hard substrata,1000,candidato fraco (uma direção)
+V46,Galé–Albufeira,37.067756,-8.27566,"37°04,065' N 08°16,540' W",12.0–13.7,260,True,Rock or other hard substrata,714,"candidato (11–13 m, B08 com cautela)"
+V47,Galé–Albufeira,37.061882,-8.275212,"37°03,713' N 08°16,513' W",15.0–15.1,17,True,Rock or other hard substrata,1341,forte candidato
+V48,Galé–Albufeira,37.065956,-8.274489,"37°03,957' N 08°16,469' W",13.6–13.9,39,False,Rock or other hard substrata,930,candidato fraco (uma direção)
+V49,Galé–Albufeira,37.064106,-8.273683,"37°03,846' N 08°16,421' W",14.5–14.7,12,False,Rock or other hard substrata,1148,candidato fraco (uma direção)
+V50,Galé–Albufeira,37.067275,-8.271583,"37°04,037' N 08°16,295' W",13.1–13.4,14,False,Rock or other hard substrata,948,candidato fraco (uma direção)
+V51,Galé–Albufeira,37.061006,-8.269633,"37°03,660' N 08°16,178' W",15.2–15.4,16,False,Sand,1612,candidato fraco (uma direção)
+V52,Galé–Albufeira,37.070465,-8.267028,"37°04,228' N 08°16,022' W",11.5–11.7,9,False,Sand,857,candidato fraco (uma direção)
+V53,Galé–Albufeira,37.067519,-8.266951,"37°04,051' N 08°16,017' W",13.9–14.1,57,False,Sand,1166,candidato fraco (uma direção)
+V54,Galé–Albufeira,37.068953,-8.26564,"37°04,137' N 08°15,938' W",13.1–13.6,104,True,Sand,1059,forte candidato

@@ -1,0 +1,178 @@
+{
+ "control_p05": -0.9,
+ "control_p50": -0.381,
+ "n_control": 356,
+ "segments_m": [
+  [
+   -330,
+   1800
+  ],
+  [
+   2010,
+   2040
+  ],
+  [
+   2340,
+   2340
+  ],
+  [
+   2910,
+   2910
+  ],
+  [
+   3750,
+   3870
+  ],
+  [
+   4590,
+   4740
+  ]
+ ],
+ "main_segment_m": [
+  -330,
+  1800
+ ],
+ "main_segment_length_m": 2130,
+ "points": [
+  {
+   "nome": "GRT0",
+   "plotter_nome": "GRT0",
+   "tipo": "barco",
+   "lat": 36.9956,
+   "lon": -8.006283,
+   "plotter": "36°59,736' N 008°00,377' W",
+   "emodnet_m": 15.3,
+   "nota": "coordenada da Greta no catálogo (DL-043)"
+  },
+  {
+   "nome": "PEDRA0",
+   "plotter_nome": "PEDRA0",
+   "tipo": "barco",
+   "lat": 36.989633,
+   "lon": -8.003817,
+   "plotter": "36°59,378' N 008°00,229' W",
+   "emodnet_m": 16.1,
+   "nota": "pedra; a 830 m da ponta NW da crista"
+  },
+  {
+   "nome": "Crista – ponta SE",
+   "plotter_nome": "CRISTSE",
+   "tipo": "satélite",
+   "lat": 36.97273,
+   "lon": -7.978251,
+   "plotter": "36°58,364' N 007°58,695' W",
+   "emodnet_m": 15.0,
+   "nota": "crista detetada (satélite)"
+  },
+  {
+   "nome": "Crista – mais escura",
+   "plotter_nome": "CRISTMX",
+   "tipo": "satélite",
+   "lat": 36.975013,
+   "lon": -7.981591,
+   "plotter": "36°58,501' N 007°58,895' W",
+   "emodnet_m": 15.3,
+   "nota": "crista detetada (satélite)"
+  },
+  {
+   "nome": "Crista – ponta NW",
+   "plotter_nome": "CRISTNW",
+   "tipo": "satélite",
+   "lat": 36.984876,
+   "lon": -7.996629,
+   "plotter": "36°59,093' N 007°59,798' W",
+   "emodnet_m": 15.9,
+   "nota": "crista detetada (satélite)"
+  },
+  {
+   "nome": "Antiga coord. DL-024",
+   "plotter_nome": "DL024",
+   "tipo": "histórico",
+   "lat": 36.97877,
+   "lon": -7.98763,
+   "plotter": "36°58,726' N 007°59,258' W",
+   "emodnet_m": 15.0,
+   "nota": "coordenada provisória até 21/10/2026"
+  },
+  {
+   "nome": "GRT",
+   "plotter_nome": "GRT",
+   "tipo": "barco",
+   "lat": 36.997183,
+   "lon": -8.008683,
+   "plotter": "36°59,831' N 008°00,521' W",
+   "emodnet_m": 14.4,
+   "nota": ""
+  },
+  {
+   "nome": "GRT1",
+   "plotter_nome": "GRT1",
+   "tipo": "barco",
+   "lat": 36.994633,
+   "lon": -8.00315,
+   "plotter": "36°59,678' N 008°00,189' W",
+   "emodnet_m": 14.7,
+   "nota": "latitude corrigida (gralha de 1° no plotter)"
+  },
+  {
+   "nome": "GRT2",
+   "plotter_nome": "GRT2",
+   "tipo": "barco",
+   "lat": 36.991217,
+   "lon": -8.00165,
+   "plotter": "36°59,473' N 008°00,099' W",
+   "emodnet_m": 15.7,
+   "nota": ""
+  },
+  {
+   "nome": "GRT3",
+   "plotter_nome": "GRT3",
+   "tipo": "barco",
+   "lat": 36.99695,
+   "lon": -8.006117,
+   "plotter": "36°59,817' N 008°00,367' W",
+   "emodnet_m": 13.7,
+   "nota": ""
+  },
+  {
+   "nome": "GRT4",
+   "plotter_nome": "GRT4",
+   "tipo": "barco",
+   "lat": 36.99535,
+   "lon": -8.004783,
+   "plotter": "36°59,721' N 008°00,287' W",
+   "emodnet_m": 14.5,
+   "nota": ""
+  },
+  {
+   "nome": "GRT5",
+   "plotter_nome": "GRT5",
+   "tipo": "barco",
+   "lat": 36.995583,
+   "lon": -8.003083,
+   "plotter": "36°59,735' N 008°00,185' W",
+   "emodnet_m": 13.8,
+   "nota": ""
+  },
+  {
+   "nome": "GRT6",
+   "plotter_nome": "GRT6",
+   "tipo": "barco",
+   "lat": 36.993633,
+   "lon": -8.002267,
+   "plotter": "36°59,618' N 008°00,136' W",
+   "emodnet_m": 15.0,
+   "nota": ""
+  },
+  {
+   "nome": "VILHA",
+   "plotter_nome": "VILHA",
+   "tipo": "barco",
+   "lat": 37.003483,
+   "lon": -8.005033,
+   "plotter": "37°00,209' N 008°00,302' W",
+   "emodnet_m": 9.4,
+   "nota": "a 11 m de afloramento COSMO (0,6 m)"
+  }
+ ]
+}

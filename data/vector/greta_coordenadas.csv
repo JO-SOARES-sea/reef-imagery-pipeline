@@ -1,0 +1,15 @@
+nome,plotter_nome,tipo,lat,lon,plotter,emodnet_m,nota
+GRT0,GRT0,barco,36.9956,-8.006283,"36°59,736' N 008°00,377' W",15.3,coordenada da Greta no catálogo (DL-043)
+PEDRA0,PEDRA0,barco,36.989633,-8.003817,"36°59,378' N 008°00,229' W",16.1,pedra; a 830 m da ponta NW da crista
+Crista – ponta SE,CRISTSE,satélite,36.97273,-7.978251,"36°58,364' N 007°58,695' W",15.0,crista detetada (satélite)
+Crista – mais escura,CRISTMX,satélite,36.975013,-7.981591,"36°58,501' N 007°58,895' W",15.3,crista detetada (satélite)
+Crista – ponta NW,CRISTNW,satélite,36.984876,-7.996629,"36°59,093' N 007°59,798' W",15.9,crista detetada (satélite)
+Antiga coord. DL-024,DL024,histórico,36.97877,-7.98763,"36°58,726' N 007°59,258' W",15.0,coordenada provisória até 21/10/2026
+GRT,GRT,barco,36.997183,-8.008683,"36°59,831' N 008°00,521' W",14.4,
+GRT1,GRT1,barco,36.994633,-8.00315,"36°59,678' N 008°00,189' W",14.7,latitude corrigida (gralha de 1° no plotter)
+GRT2,GRT2,barco,36.991217,-8.00165,"36°59,473' N 008°00,099' W",15.7,
+GRT3,GRT3,barco,36.99695,-8.006117,"36°59,817' N 008°00,367' W",13.7,
+GRT4,GRT4,barco,36.99535,-8.004783,"36°59,721' N 008°00,287' W",14.5,
+GRT5,GRT5,barco,36.995583,-8.003083,"36°59,735' N 008°00,185' W",13.8,
+GRT6,GRT6,barco,36.993633,-8.002267,"36°59,618' N 008°00,136' W",15.0,
+VILHA,VILHA,barco,37.003483,-8.005033,"37°00,209' N 008°00,302' W",9.4,"a 11 m de afloramento COSMO (0,6 m)"
