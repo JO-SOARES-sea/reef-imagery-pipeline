@@ -170,3 +170,15 @@ FFT_CLEAN_THRESHOLD = 5000
 # conservador da documentação TypeSafe — calibrar com o ground truth CCMAR/Greta.
 JEV_REEF_YES_MIN = 0.8
 JEV_REEF_NO_MAX = 0.2
+
+# =============================================================================
+# HOLDOUT PRÉ-REGISTADO (docs/HOLDOUT_PREREGISTO.md, 2026-10-26) — não alterar
+# =============================================================================
+
+# Caixa WGS84 (W, S, E, N) do setor COSMO LTHBAIF1 (Barreta–Farol) + 1 km: fora de todo o desenvolvimento
+HOLDOUT_BBOX_WGS84 = (-7.905, 36.940, -7.835, 36.990)
+# Passagens Sentinel-2 com aquisição a partir desta data ficam reservadas (desenvolvimento: 2017-01-01 a 2024-12-31)
+HOLDOUT_FIRST_DATE = "2025-01-01"
+DEV_DATE_RANGE = "2017-01-01/2024-12-31"
+# Holdout v2 (docs/HOLDOUT_PREREGISTO_v2.md, 2026-10-26): setor COSMO LTHNOCR1 (Porches) + 1 km — não alterar
+HOLDOUT2_BBOX_WGS84 = (-8.403, 37.077, -8.361, 37.108)
