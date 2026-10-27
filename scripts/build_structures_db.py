@@ -12,6 +12,10 @@ desenvolvimento e gera, em data/external/persistent_structures/:
     nomes de 8 caracteres no máximo, e colunas vazias para devolver: hora, profundidade, pedra/areia.
 Estruturas dentro do holdout só entram com `--include-holdout` (depois do teste final).
 
+Com ``--blind-controls`` (protocolo E024, docs/PROTOCOLO_VERIFICACAO_SONDA_E024.md) não se refaz a base: a partir da
+lista existente sorteia-se um controlo por candidata e gravam-se `verificacao_sonda_cega.{gpx,csv}` (para o barco, sem
+saber qual marca é candidata) e `verificacao_sonda_chave.csv` (a correspondência, que fica em terra).
+
 Níveis de evidência: (a) confirmação independente (COSMO rocha estável, cumes CCMAR, sonda do Rui com marca,
 observação subaquática, rocha de Teixeira); (b) conhecimento local (marcas do plotter a ≤ 50 m); (c) só satélite.
 """
@@ -37,7 +41,8 @@ from shapely.geometry import LineString, Point, shape
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-from src.constants import HOLDOUT_BBOX_WGS84  # noqa: E402
+from src.analysis.sounder_checks import CONTROL_MIN_DIST_M, pick_controls  # noqa: E402
+from src.constants import HOLDOUT2_BBOX_WGS84, HOLDOUT_BBOX_WGS84  # noqa: E402
 
 _s = importlib.util.spec_from_file_location("h4", PROJECT_ROOT / "scripts" / "run_h4_classifier.py")
 h4 = importlib.util.module_from_spec(_s)
@@ -98,12 +103,91 @@ def evidence_layers():
     return conf, gpd.GeoSeries(art, crs=32629).unary_union, marks
 
 
+def _in_box(lat, lon, box) -> np.ndarray:
+    W, S, E, N = box
+    return (np.asarray(lon) >= W) & (np.asarray(lon) <= E) & (np.asarray(lat) >= S) & (np.asarray(lat) <= N)
+
+
+def blind_controls(seed: int) -> None:
+    """Protocolo E024: um controlo cego por candidata e GPX com nomes neutros."""
+    from rasterio.features import rasterize
+    from shapely.geometry import box as sbox
+    V = pd.read_csv(OUT / "verificacao_sonda.csv")
+    D = gpd.read_file(OUT / "estruturas_v2.geojson").to_crs(32629)
+    _, art, _ = evidence_layers()
+    boxes = []
+    for b in (HOLDOUT_BBOX_WGS84, HOLDOUT2_BBOX_WGS84):
+        hb = gpd.GeoSeries.from_xy([b[0], b[2]], [b[1], b[3]], crs=4326).to_crs(32629)
+        boxes.append(sbox(hb.x.min(), hb.y.min(), hb.x.max(), hb.y.max()))
+    blocked = [D.geometry.buffer(CONTROL_MIN_DIST_M).unary_union, art] + boxes
+    fwd = Transformer.from_crs(4326, 32629, always_xy=True)
+    inv = Transformer.from_crs(32629, 4326, always_xy=True)
+    cx, cy = fwd.transform(V.lon.values, V.lat.values)
+    chosen_xy: list[tuple[float, float]] = []
+    ctrl = []
+    for zone, g in V.groupby("zona", sort=False):
+        z = h4.evd.load_zone(zone, "_dev")
+        P = np.load(PDIR / f"{zone}_frozen_prob.npy")
+        absz = np.abs(z["ALL_med_B03"])
+        dep = z["depth"]
+        bg = z["sea"].astype(bool) & (dep >= 3) & (dep <= 25) & np.isfinite(P) & np.isfinite(absz)
+        elig = bg & (P < np.median(P[bg])) & (absz < np.median(absz[bg]))
+        elig &= ~rasterize(((geom, 1) for geom in blocked), out_shape=z["shape"], transform=z["T"]).astype(bool)
+        rr, cc = np.indices(z["shape"])
+        X, Y = z["T"].c + (cc + .5) * 10, z["T"].f - (rr + .5) * 10
+        avoid = list(zip(cx, cy)) + chosen_xy
+        idx = pick_controls(g.prof_emodnet_m.values, dep, elig, X, Y, avoid_xy=avoid, seed=seed)
+        for (_, row), k in zip(g.iterrows(), idx):
+            if k is None:
+                ctrl.append({"cand": row, "lat": None})
+                continue
+            x, y = X.ravel()[k], Y.ravel()[k]
+            chosen_xy.append((x, y))
+            lon, lat = inv.transform(x, y)
+            ctrl.append({"cand": row, "lat": round(lat, 6), "lon": round(lon, 6), "depth": round(float(dep.ravel()[k]), 1),
+                         "p_h4": round(float(P.ravel()[k]), 3), "absz": round(float(absz.ravel()[k]), 3)})
+    rows = []
+    for _, r in V.iterrows():
+        rows.append({"tipo": "candidata", "id_estrutura": r.id, "nome_original": r.nome_gpx, "zona": r.zona, "lat": r.lat, "lon": r.lon,
+                     "prof_emodnet_m": r.prof_emodnet_m, "dominio_validado": r.dominio_validado})
+    for c in ctrl:
+        r = c["cand"]
+        if c["lat"] is None:
+            print(f"sem controlo para {r.nome_gpx} ({r.zona}, {r.prof_emodnet_m} m)")
+            continue
+        rows.append({"tipo": "controlo", "id_estrutura": r.id, "nome_original": f"ctrl_{r.nome_gpx}", "zona": r.zona, "lat": c["lat"],
+                     "lon": c["lon"], "prof_emodnet_m": c["depth"], "dominio_validado": r.dominio_validado,
+                     "p_h4_pixel": c["p_h4"], "absz_pixel": c["absz"]})
+    K = pd.DataFrame(rows).sample(frac=1, random_state=seed).reset_index(drop=True)
+    K.insert(0, "nome_gpx", [f"SND{i:03d}" for i in range(1, len(K) + 1)])
+    K["selado_holdout_v2"] = _in_box(K.lat, K.lon, HOLDOUT2_BBOX_WGS84)
+    K["diagnostico_holdout_v1"] = _in_box(K.lat, K.lon, HOLDOUT_BBOX_WGS84)
+    K.to_csv(OUT / "verificacao_sonda_chave.csv", index=False)
+    B = K[["nome_gpx", "lat", "lon", "prof_emodnet_m"]].copy()
+    B.insert(3, "plotter", [f"{dmm(la, 'N', 'S', 2)} {dmm(lo, 'E', 'W', 3)}" for la, lo in zip(B.lat, B.lon)])
+    for col in ("hora_utc", "profundidade_sonda_m", "pedra_ou_areia", "notas"):
+        B[col] = ""
+    B.to_csv(OUT / "verificacao_sonda_cega.csv", index=False)
+    gpx = gpd.GeoDataFrame({"name": B.nome_gpx}, geometry=gpd.points_from_xy(B.lon, B.lat), crs=4326)
+    gpx.to_file(OUT / "verificacao_sonda_cega.gpx", driver="GPX", layer="waypoints")
+    summ = {"n_marcas": int(len(K)), "por_tipo": K.tipo.value_counts().to_dict(), "seed": seed,
+            "selados_v2": K[K.selado_holdout_v2].nome_gpx.tolist(), "diagnostico_v1": K[K.diagnostico_holdout_v1].nome_gpx.tolist()}
+    print(json.dumps(summ, ensure_ascii=False))
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Base costeira de estruturas persistentes + lista para a sonda")
-    p.add_argument("--model", type=Path, required=True)
+    p.add_argument("--model", type=Path, default=None)
     p.add_argument("--n-verify", type=int, default=30)
     p.add_argument("--include-holdout", action="store_true")
+    p.add_argument("--blind-controls", action="store_true", help="Protocolo E024: controlos cegos e GPX neutro (não refaz a base).")
+    p.add_argument("--seed", type=int, default=42)
     a = p.parse_args()
+    if a.blind_controls:
+        blind_controls(a.seed)
+        return
+    if a.model is None:
+        p.error("--model é obrigatório para construir a base")
     bundle = joblib.load(a.model)
     m, feats = bundle["model"], bundle["features"]
     conf, art, marks = evidence_layers()
