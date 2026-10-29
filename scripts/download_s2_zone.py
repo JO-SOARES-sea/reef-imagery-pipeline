@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import planetary_computer as pc
 import rasterio
 from pystac_client import Client
 from rasterio.warp import transform_bounds
-from rasterio.windows import from_bounds
+from rasterio.windows import Window, from_bounds
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("download_s2_zone")
@@ -46,6 +47,19 @@ ZONES = {
         "output_file": RAW_DIR / "quarteira_sample.tif",
     },
 }
+
+
+def native_window(bounds: tuple[float, float, float, float], transform) -> Window:
+    """Janela de píxeis inteiros que cobre ``bounds`` (left, bottom, right, top na CRS da cena).
+
+    Uma janela fracionária (from_bounds direto) devolve os píxeis nativos mas rotula-os com uma origem
+    deslocada até 1 píxel da grelha Sentinel-2: erro de georreferenciação de alguns metros.
+    """
+    w = from_bounds(*bounds, transform=transform)
+    col0, row0 = math.floor(w.col_off + 1e-6), math.floor(w.row_off + 1e-6)
+    col1 = math.ceil(w.col_off + w.width - 1e-6)
+    row1 = math.ceil(w.row_off + w.height - 1e-6)
+    return Window(col0, row0, col1 - col0, row1 - row0)
 
 
 def download_zone_sample(
@@ -113,11 +127,11 @@ def download_zone_sample(
                 left, bottom, right, top = transform_bounds(
                     "EPSG:4326", src.crs, bbox[0], bbox[1], bbox[2], bbox[3]
                 )
-                window = from_bounds(left, bottom, right, top, transform=src.transform)
+                window = native_window((left, bottom, right, top), src.transform)
 
                 out_profile = src.profile.copy()
                 out_transform = rasterio.windows.transform(window, src.transform)
-                h_win, w_win = int(round(window.height)), int(round(window.width))
+                h_win, w_win = int(window.height), int(window.width)
 
                 out_profile.update(
                     driver="GTiff",
