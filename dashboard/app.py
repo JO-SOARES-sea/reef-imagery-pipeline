@@ -3,6 +3,7 @@ import math
 import os
 import json
 from flask import Flask, send_from_directory, send_file, request, jsonify
+from werkzeug.utils import secure_filename
 import sys
 import cv2
 import numpy as np
@@ -25,6 +26,37 @@ app = Flask(__name__, static_folder='.', static_url_path='')
 
 FULL_DPI_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'full_dpi_cache')
 os.makedirs(FULL_DPI_CACHE, exist_ok=True)
+
+
+def _dashboard_token():
+    """Optional shared-secret gate. Unset DASHBOARD_TOKEN keeps the dashboard open (localhost-only default)."""
+    return os.environ.get('DASHBOARD_TOKEN', '').strip()
+
+
+def _safe_join(root, relative_path):
+    """Join `relative_path` under `root`, refusing absolute paths and `..` escapes.
+
+    Returns the resolved absolute path, or None when the target would land outside `root`.
+    """
+    if not relative_path or not isinstance(relative_path, str):
+        return None
+    root_real = os.path.realpath(root)
+    candidate = os.path.realpath(os.path.join(root_real, relative_path))
+    if candidate == root_real or not candidate.startswith(root_real + os.sep):
+        return None
+    return candidate
+
+
+@app.before_request
+def _require_dashboard_token():
+    token = _dashboard_token()
+    if not token:
+        return None
+    supplied = request.headers.get('X-Dashboard-Token') or request.args.get('token')
+    if supplied != token:
+        return jsonify({'status': 'error', 'message': 'unauthorized'}), 401
+    return None
+
 
 def enhance_local_tile(source_tile_path, enhanced_filepath):
     img = cv2.imread(source_tile_path, cv2.IMREAD_GRAYSCALE)
@@ -50,7 +82,9 @@ def index():
 
 @app.route('/api/orchestrate-enhance', methods=['POST'])
 def orchestrate_enhance():
-    data = request.json
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'status': 'error', 'message': 'JSON object body required'}), 400
     image_date = data.get('IMAGE_DATE', '2023-09-01')
     target_snr = data.get('TARGET_SNR', 119.30)
     lat = data.get('LAT', 37.05811)
@@ -65,10 +99,15 @@ def orchestrate_enhance():
     source_tile = active_tile_relative or tile_b02_relative
     if source_tile:
         try:
-            full_source_path = os.path.join(dashboard_dir, source_tile)
-            basename = os.path.basename(source_tile)
+            full_source_path = _safe_join(dashboard_dir, source_tile)
+            if full_source_path is None:
+                raise ValueError(f"tile path escapes the dashboard directory: {source_tile!r}")
+            basename = secure_filename(os.path.basename(source_tile)) or 'tile'
             enhanced_filename = f"enhanced_viridis_{basename}"
-            full_enhanced_path = os.path.join(dashboard_dir, "tiles", enhanced_filename)
+            full_enhanced_path = _safe_join(os.path.join(dashboard_dir, "tiles"), enhanced_filename)
+            if full_enhanced_path is None:
+                raise ValueError("refusing to write outside dashboard/tiles")
+            os.makedirs(os.path.dirname(full_enhanced_path), exist_ok=True)
             snr_mean_local, snr_median_local = enhance_local_tile(full_source_path, full_enhanced_path)
             enhanced_url = f"tiles/{enhanced_filename}"
         except Exception as e:
@@ -117,7 +156,9 @@ def orchestrate_enhance():
 
 @app.route('/api/generate-full-dpi', methods=['POST'])
 def generate_full_dpi():
-    data = request.json or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'status': 'error', 'message': 'JSON object body required'}), 400
     ratio_tif = data.get('ratio_tif', '')
     band = data.get('band', 'ratio')
     dir_name = data.get('dir', '')
@@ -126,12 +167,10 @@ def generate_full_dpi():
     master_root = os.path.join(project_root, 'reef_Output_Master')
 
     def resolve_tif_path(relative_path):
-        candidate = os.path.join(project_root, relative_path)
-        if os.path.isfile(candidate):
-            return candidate
-        candidate_master = os.path.join(master_root, relative_path)
-        if os.path.isfile(candidate_master):
-            return candidate_master
+        for root in (project_root, master_root):
+            candidate = _safe_join(root, relative_path)
+            if candidate and os.path.isfile(candidate):
+                return candidate
         return None
 
     if band == 'b02' and dir_name and date_str:
@@ -159,8 +198,14 @@ def generate_full_dpi():
     if not tif_path:
         return jsonify({"status": "error", "message": f"Source TIF not found: {rel}"}), 404
 
-    cache_filename = f"full_dpi_{label}_{band}_4x_300dpi.png"
-    cache_path = os.path.join(FULL_DPI_CACHE, cache_filename)
+    # Sanitised so a crafted dir/date/band cannot traverse out of FULL_DPI_CACHE.
+    cache_filename = "full_dpi_{label}_{band}_4x_300dpi.png".format(
+        label=secure_filename(label) or "layer",
+        band=secure_filename(band) or "ratio",
+    )
+    cache_path = _safe_join(FULL_DPI_CACHE, cache_filename)
+    if cache_path is None:
+        return jsonify({"status": "error", "message": "Invalid cache path"}), 400
     if os.path.isfile(cache_path):
         return send_file(cache_path, mimetype='image/png', as_attachment=True,
                          download_name=cache_filename)
@@ -906,4 +951,12 @@ def wms_proxy():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=3000, debug=True)
+    _host = os.environ.get('DASHBOARD_HOST', '127.0.0.1')
+    _port = int(os.environ.get('DASHBOARD_PORT', '3000'))
+    _debug = os.environ.get('DASHBOARD_DEBUG', '0').strip().lower() in ('1', 'true', 'yes')
+    _loopback = _host in ('127.0.0.1', 'localhost', '::1')
+    if _debug and not _loopback:
+        raise SystemExit('Refusing to expose the Werkzeug debugger beyond loopback: set DASHBOARD_DEBUG=0')
+    if not _loopback and not _dashboard_token():
+        raise SystemExit('DASHBOARD_TOKEN must be set when binding beyond loopback')
+    app.run(host=_host, port=_port, debug=_debug)

@@ -24,7 +24,7 @@ ruff check src/
 mypy src/coastal_topography.py src/ranking_model.py src/drift_monitor.py --ignore-missing-imports
 
 # Run the pipeline
-python -m src.orchestrator_run --depth 16.0
+cp config.example.yaml config.yaml   # point the 4 band paths at real single-band GeoTIFFs
 python -m src.orchestrator_run --depth 16.0 --config config.yaml
 
 # BVI prediction at a point
@@ -98,6 +98,17 @@ DGT MDT-50cm (50 cm LiDAR, requires S3 credentials) → Copernicus GLO-30 (30 m,
 ### Dashboard
 
 `dashboard/app.py` is a Flask server serving `dashboard/index.html` (Leaflet map). It reads GeoTIFF outputs and cached BVI JSON via local routes; `enhance_local_tile()` in app.py applies CLAHE/NLM inline rather than importing `src/enhancer.py`.
+
+Runtime configuration is environment-driven (defaults keep it loopback-only):
+
+| Var | Default | Meaning |
+|---|---|---|
+| `DASHBOARD_HOST` | `127.0.0.1` | Bind address. Anything non-loopback requires `DASHBOARD_TOKEN` |
+| `DASHBOARD_PORT` | `3000` | Port |
+| `DASHBOARD_DEBUG` | `0` | Werkzeug debugger; **refused** on a non-loopback host |
+| `DASHBOARD_TOKEN` | unset | Shared secret. When set, every request needs `X-Dashboard-Token` or `?token=` |
+
+Request-supplied paths (`ratio_tif`, `TILE_B02`, `ACTIVE_TILE_PATH`, `dir`, `date`) are resolved through `_safe_join()`, which rejects absolute paths and `..` escapes, and cache filenames are passed through `secure_filename()`.
 
 ### Test markers
 

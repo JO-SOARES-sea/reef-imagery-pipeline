@@ -337,6 +337,24 @@ def save_csv(results: dict, path: Path):
     log.info("CSV saved: %s", path)
 
 
+def _validate_inputs(paths: dict[str, Path]) -> None:
+    """Fail fast with an actionable message instead of a rasterio error deep in the pipeline."""
+    missing = {name: Path(path) for name, path in paths.items() if not Path(path).is_file()}
+    if not missing:
+        return
+    Detail = "\n".join(f"  {name:<10} {path}" for name, path in missing.items())
+    raise SystemExit(
+        "Missing input rasters — the pipeline cannot start:\n"
+        f"{Detail}\n\n"
+        "Provide the two dated B02/B03 single-band pairs with a YAML config:\n"
+        "  python -m src.orchestrator_run --depth 16.0 --config config.yaml\n"
+        "config keys: image_a_b02, image_a_b03, image_b_b02, image_b_b03\n"
+        "or per-file CLI flags: --image-a-b02/--image-a-b03/--image-b-b02/--image-b-b03\n"
+        "A template lives at config.example.yaml. Multi-band composites (e.g.\n"
+        "data/raw/pedra_do_valado_composite.tif) must be split into one file per band first."
+    )
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main(depth: float = 16.0, config_path: str | None = None):
     # Apply YAML config overrides (if provided)
@@ -348,6 +366,15 @@ def main(depth: float = 16.0, config_path: str | None = None):
     out_dir = Path(cfg["output_dir"]) if cfg.get("output_dir") else OUTPUT_DIR
     target_lat = float(cfg["target_lat"]) if cfg.get("target_lat") else TARGET_LAT
     target_lon = float(cfg["target_lon"]) if cfg.get("target_lon") else TARGET_LON
+
+    _validate_inputs(
+        {
+            "image_a_b02": b02_a_path,
+            "image_a_b03": b03_a_path,
+            "image_b_b02": b02_b_path,
+            "image_b_b03": b03_b_path,
+        }
+    )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     log.info("=== Reef Orchestrator — depth=%.1fm ===", depth)
@@ -679,10 +706,18 @@ if __name__ == "__main__":
     parser.add_argument("--depth", type=float, default=16.0, help="Target depth in metres")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML config file")
     parser.add_argument("--image-a-b02", type=str, help="Override Image A B02 path")
+    parser.add_argument("--image-a-b03", type=str, help="Override Image A B03 path")
     parser.add_argument("--image-b-b02", type=str, help="Override Image B B02 path")
+    parser.add_argument("--image-b-b03", type=str, help="Override Image B B03 path")
     args = parser.parse_args()
-    if args.image_a_b02:
-        IMAGE_A_B02 = Path(args.image_a_b02)
-    if args.image_b_b02:
-        IMAGE_B_B02 = Path(args.image_b_b02)
+    # Explicit overrides win over the config file and the module defaults.
+    for attr, names in (
+        ("image_a_b02", ("IMAGE_A_B02", "image_a_b02")),
+        ("image_a_b03", ("IMAGE_A_B03", "image_a_b03")),
+        ("image_b_b02", ("IMAGE_B_B02", "image_b_b02")),
+        ("image_b_b03", ("IMAGE_B_B03", "image_b_b03")),
+    ):
+        override = getattr(args, attr, None)
+        if override:
+            globals()[names[0]] = Path(override)
     main(depth=args.depth, config_path=args.config)

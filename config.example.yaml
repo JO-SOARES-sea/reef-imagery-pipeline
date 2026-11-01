@@ -1,0 +1,27 @@
+# Reef Benthic Visibility Orchestrator — config template
+#
+# Copy to `config.yaml` and point the four band paths at real files:
+#   cp config.example.yaml config.yaml
+#   python -m src.orchestrator_run --depth 16.0 --config config.yaml
+#
+# Each path must be a SINGLE-BAND GeoTIFF (surface reflectance, L2A BOA):
+# split multi-band composites first, e.g. for data/raw/pedra_do_valado_composite.tif
+# whose bands are ('B02_Blue', 'B03_Green', 'B04_Red', 'B08_NIR'):
+#   gdal_translate -b 1 data/raw/pedra_do_valado_composite.tif S2_B02_<date>.tif
+#   gdal_translate -b 2 data/raw/pedra_do_valado_composite.tif S2_B03_<date>.tif
+#
+# Image A and Image B are two cloud-free scenes of the SAME site on DIFFERENT
+# dates; the orchestrator ranks them by Bottom Visibility Index.
+
+# ── Scene A ──────────────────────────────────────────────────────────────────
+image_a_b02: reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B02_20250925.tif
+image_a_b03: reef_Output_Master/reef_output_pedra_to_gale_20250925/S2_B03_20250925.tif
+
+# ── Scene B ──────────────────────────────────────────────────────────────────
+image_b_b02: reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B02_20231001.tif
+image_b_b03: reef_Output_Master/reef_output_ai_prediction_spot_2023/S2_B03_20231001.tif
+
+# ── Output & target site (optional — omit to use the module defaults) ────────
+# output_dir: reef_output_acolite_comparison
+# target_lat: 37.05815   # Pedra do Valado
+# target_lon: -8.20982

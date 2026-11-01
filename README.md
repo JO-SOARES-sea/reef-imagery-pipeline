@@ -38,11 +38,12 @@ python3.11 -m venv .venv && source .venv/bin/activate
 # 2. Install dependencies (all extras live in pyproject.toml)
 pip install -e ".[dev]"          # core deps + pytest, ruff, mypy, black
 
-# 3. Run the pipeline (simulated mode, target depth 16 m)
-python -m src.orchestrator_run --depth 16.0
+# 3. Run the pipeline (needs two dated B02/B03 scene pairs — see config.example.yaml)
+cp config.example.yaml config.yaml   # then point the 4 paths at real single-band GeoTIFFs
+python -m src.orchestrator_run --depth 16.0 --config config.yaml
 
 # 4. Launch the Flask dashboard
-python dashboard/app.py          # → http://localhost:5000
+python dashboard/app.py          # → http://localhost:3000
 
 # 5. Offline test suite (no satellite credentials needed)
 pytest tests/ -m "not network" -q
