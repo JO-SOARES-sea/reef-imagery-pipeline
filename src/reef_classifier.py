@@ -44,6 +44,21 @@ except ImportError:
     log.warning("PyTorch not available — ReefClassifier inference disabled")
 
 
+def autodetect_device() -> str:
+    """Best available PyTorch accelerator: CUDA → Apple MPS → CPU.
+
+    Apple Silicon Macs have no CUDA, so the previous ``cuda else cpu`` logic
+    silently trained on CPU. MPS (Metal Performance Shaders) is available on
+    this hardware (torch.backends.mps.is_available()).
+    """
+    if torch.cuda.is_available():
+        return "cuda"
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. Dataset
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,6 +182,7 @@ def train(
     weight_decay: float = 1e-4,
     patience: int = 8,
     device: str | None = None,
+    num_workers: int | None = None,
 ) -> list[dict]:
     """
     Train the model and save the best checkpoint.
@@ -182,9 +198,12 @@ def train(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = autodetect_device()
     dev = torch.device(device)
-    log.info("Training on device: %s", dev)
+    if num_workers is None:
+        num_workers = 0 if dev.type == "cpu" else 2
+    use_pin_memory = dev.type == "cuda"
+    log.info("Training on device: %s (num_workers=%d)", dev, num_workers)
 
     model = model.to(dev)
 
@@ -198,8 +217,12 @@ def train(
     weights = [1.0 / n_reef if lbl == 1 else 1.0 / n_sand for lbl in labels]
     sampler = torch.utils.data.WeightedRandomSampler(weights, num_samples=len(labels), replacement=True)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=2, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=2, pin_memory=True)
+    train_loader = DataLoader(
+        train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers, pin_memory=use_pin_memory
+    )
+    val_loader = DataLoader(
+        val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=use_pin_memory
+    )
 
     criterion = nn.BCELoss()
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -304,6 +327,7 @@ def evaluate(
     *,
     threshold: float = 0.5,
     device: str | None = None,
+    num_workers: int | None = None,
 ) -> dict:
     """
     Evaluate model on the validation set and return classification metrics.
@@ -316,13 +340,15 @@ def evaluate(
         raise ImportError("PyTorch required")
 
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = autodetect_device()
     dev = torch.device(device)
+    if num_workers is None:
+        num_workers = 0 if dev.type == "cpu" else 2
     model = model.to(dev)
     model.eval()
 
     val_ds = ReefPatchDataset(val_dir, augment=False)
-    val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=2)
+    val_loader = DataLoader(val_ds, batch_size=32, shuffle=False, num_workers=num_workers)
 
     all_probs, all_labels = [], []
     with torch.no_grad():
@@ -394,7 +420,7 @@ def load_model(checkpoint_path: str | Path, device: str | None = None) -> ReefCl
     if not _HAS_TORCH:
         raise ImportError("PyTorch required")
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = autodetect_device()
     model = ReefClassifier(pretrained=False)
     state = torch.load(str(checkpoint_path), map_location=device, weights_only=True)
     model.load_state_dict(state)
@@ -415,7 +441,7 @@ def predict_single(
     if not _HAS_TORCH:
         raise ImportError("PyTorch required")
     if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = autodetect_device()
     model = model.to(torch.device(device)).eval()
     x = torch.from_numpy(patch).unsqueeze(0).float().to(device)  # (1, 4, H, W)
     with torch.no_grad():
