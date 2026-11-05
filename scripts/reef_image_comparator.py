@@ -382,7 +382,7 @@ def main():
         print(f"\n[{i+1}/{len(args.dates)}] Processing {date_str}...")
         raw = download_bands(lat, lon, date_str, buffer_m)
         if raw is None:
-            print(f"    SKIP - no scene found")
+            print("    SKIP - no scene found")
             continue
         b02, b03, b08 = raw["b02"], raw["b03"], raw["b08"]
         local_cloud = check_local_cloud(b02, b08)
@@ -415,7 +415,7 @@ def main():
     all_data.sort(key=lambda d: d["metrics"]["bvi"], reverse=True)
 
     print(f"\n{'='*80}")
-    print(f"  BVI RANKING")
+    print("  BVI RANKING")
     print(f"{'='*80}")
     print(f"\n  {'#':>2}  {'Date':<12} {'BVI':>5} {'Local':>6} {'STAC':>6} {'SNR':>6} {'Kd':>7} {'FFT':>8} {'Entropy':>8}")
     print("  " + "-" * 75)
@@ -425,7 +425,7 @@ def main():
         print(f"  {i+1:>2}. {d['date']:<12} {m['bvi']:.3f} {m['local_cloud']:>5.1f}% {d['stac_cloud']:>5.1f}% "
               f"{m['snr']:>5.1f} {m['kd']:>6.4f} {m['fft_clean']:>7.0f} {m['edge_entropy']:>7.2f}  {star}")
 
-    print(f"\n  Generating comparison figure...")
+    print("\n  Generating comparison figure...")
     out_path = str(out_dir / "reef_comparison.png")
     create_comparison_figure(all_data, lat, lon, out_path)
 

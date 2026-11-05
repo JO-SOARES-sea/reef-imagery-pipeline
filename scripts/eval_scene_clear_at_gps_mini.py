@@ -67,12 +67,11 @@ import argparse
 import csv
 import logging
 import sys
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import rasterio
 from rasterio.windows import Window
 

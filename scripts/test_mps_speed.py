@@ -1,4 +1,4 @@
-import time, torch, numpy as np
+import time, torch
 from src.ml_unet_model import ReefUNet
 from scripts.dgt_train_unet import make_loaders
 

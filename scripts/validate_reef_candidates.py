@@ -20,7 +20,6 @@ Output: GeoJSON com campo 'confidence_score' (0-100) e 'validation_notes'
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -169,7 +168,7 @@ def main():
     gdf = gpd.read_file(args.candidates)
     print(f"  → {len(gdf)} candidates found")
     
-    print(f"Reading rasters...")
+    print("Reading rasters...")
     with rasterio.open(args.bathy) as src:
         bathy_arr = src.read(1).astype(np.float32)
         transform = src.transform

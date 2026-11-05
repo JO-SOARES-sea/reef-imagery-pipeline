@@ -15,9 +15,6 @@ import sys, os, warnings; warnings.filterwarnings("ignore")
 import json
 import numpy as np, pandas as pd
 from pathlib import Path
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import LeaveOneOut
 import pickle
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -154,7 +151,7 @@ def train_bvi_weights(metrics_list, pairs):
         "signal":          0.05,   # Raw signal level
     }
 
-    print(f"\n  EXPERT FEATURE WEIGHTS (B02-only):")
+    print("\n  EXPERT FEATURE WEIGHTS (B02-only):")
     print(f"  {'Feature':<25} {'Weight':>8}  {'Importance':>10}")
     print("  " + "-" * 50)
     sorted_weights = sorted(weights.items(), key=lambda x: abs(x[1]), reverse=True)
@@ -179,7 +176,7 @@ def train_bvi_weights(metrics_list, pairs):
     df["bvi"] = scores_norm
     df = df.sort_values("bvi", ascending=False).reset_index(drop=True)
 
-    print(f"\n  VERIFIED RANKING:")
+    print("\n  VERIFIED RANKING:")
     print(f"  {'#':>2}  {'Date':<12} {'BVI':>6}  {'Expert':>7}")
     print("  " + "-" * 35)
     for i, r in df.iterrows():
@@ -221,7 +218,7 @@ def evaluate_bvi(metrics_list, weights):
     df["bvi_trained"] = scores_norm
     df = df.sort_values("bvi_trained", ascending=False).reset_index(drop=True)
 
-    print(f"\n  TRAINED BVI RANKING:")
+    print("\n  TRAINED BVI RANKING:")
     header = f"  {'#':>2}  {'Date':<12} {'BVI':>6}  "
     header += " ".join(f"{FEATURE_NAMES[f]:>10}" for f in FEATURE_COLS)
     print(header)
@@ -293,7 +290,7 @@ def main():
     else:
         metrics = DEFAULT_METRICS
         pairs = DEFAULT_PAIRS
-        print(f"  Using default expert labels (8 images, 13 pairwise comparisons)")
+        print("  Using default expert labels (8 images, 13 pairwise comparisons)")
 
     # Train
     weights, model, scaler = train_bvi_weights(metrics, pairs)
@@ -306,7 +303,7 @@ def main():
 
     # Show old vs new comparison
     print(f"\n{'='*70}")
-    print(f"  OLD vs NEW BVI COMPARISON")
+    print("  OLD vs NEW BVI COMPARISON")
     print(f"{'='*70}")
     old_weights = {
         "fft_clean": 0.25, "benthic_contrast": 0.20,
@@ -322,10 +319,10 @@ def main():
         arrow = "UP" if change > 0.01 else "DOWN" if change < -0.01 else "SAME"
         print(f"  {FEATURE_NAMES[feat]:<25} {old:>+8.4f} {new:>+8.4f} {arrow:>8}")
 
-    print(f"\n  KEY CHANGES:")
-    print(f"  - Now uses B02-only features (no B03/B08 dependency)")
-    print(f"  - Benthic contrast: strong predictor of reef visibility")
-    print(f"  - FFT cleanliness & SNR: B02 surface quality metrics")
+    print("\n  KEY CHANGES:")
+    print("  - Now uses B02-only features (no B03/B08 dependency)")
+    print("  - Benthic contrast: strong predictor of reef visibility")
+    print("  - FFT cleanliness & SNR: B02 surface quality metrics")
 
 
 if __name__ == "__main__":

@@ -16,10 +16,7 @@ Extent:
   N =  37.20 (onshore buffer)
 """
 
-import argparse
-import json
 import logging
-import os
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -113,7 +110,6 @@ def validate_candidates(candidates_geojson: Path, bathy_tif: Path,
                         tri_tif: Path, bpi_tif: Path) -> Path:
     """Score each candidate and return path to validated GeoJSON."""
     import geopandas as gpd
-    from shapely.geometry import shape
 
     gdf = gpd.read_file(candidates_geojson)
     log.info("Validating %d candidates …", len(gdf))

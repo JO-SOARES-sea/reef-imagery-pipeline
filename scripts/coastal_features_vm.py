@@ -11,7 +11,7 @@ It prints each site's stats as a `CSV::` line (so the caller can grep them out)
 and also writes `coastal_features_vm.csv` in the VM home dir.  Slope/aspect use
 the exact gradient formula from src/coastal_topography.py for consistency.
 """
-import os, json, time
+import os, time
 
 # --- map the VM's AWS_*2 creds to the names GDAL/rasterio expect ---
 _ep = os.environ["AWS_ENDPOINT_URL2"].replace("https://", "").replace("http://", "")

@@ -64,7 +64,7 @@ print("="*80)
 print("  SPRINT 1 — Algarve Central Coast Bathymetry (Phase A: Sentinel-2)")
 print(f"  BBox: {BBOX_WGS84['west']}°W → {BBOX_WGS84['east']}°W, "
       f"{BBOX_WGS84['south']}°N → {BBOX_WGS84['north']}°N")
-print(f"  Faro ↔ Armação de Pêra (~40km × 14km)")
+print("  Faro ↔ Armação de Pêra (~40km × 14km)")
 print(f"  Output: {OUT_TIF.name}")
 print("="*80)
 
@@ -72,7 +72,7 @@ print("="*80)
 # STEP 1: Search Sentinel-2 best clear scenes
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[1] Searching Sentinel-2 L2A via Planetary Computer STAC...")
+print("\n[1] Searching Sentinel-2 L2A via Planetary Computer STAC...")
 
 catalog = Client.open(
     "https://planetarycomputer.microsoft.com/api/stac/v1",
@@ -222,7 +222,7 @@ print(f"    Area: {(maxx-minx)/1000:.1f} × {(maxy-miny)/1000:.1f} km")
 # STEP 3: For each scene, read B02/B03 windowed, compute Stumpf SDB
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[3] Reading bands + computing Stumpf SDB per scene...")
+print("\n[3] Reading bands + computing Stumpf SDB per scene...")
 
 def stumpf_sdb(b02, b03, m0=STUMPF_M0, m1=STUMPF_M1, n=STUMPF_N):
     """Stumpf et al. 2003: depth = m1 * ln(n*B02)/ln(n*B03) + m0"""
@@ -312,7 +312,7 @@ if not depth_stack:
 # STEP 4: Median composite + uncertainty
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[4] Computing median composite + uncertainty...")
+print("\n[4] Computing median composite + uncertainty...")
 
 depth_arr = np.stack(depth_stack, axis=0)  # (N, H, W)
 valid_arr = np.stack(valid_stack, axis=0)
@@ -378,13 +378,13 @@ with rasterio.open(OUT_TIF, "w", **profile) as dst:
 
 size_mb = OUT_TIF.stat().st_size / 1e6
 print(f"    ✓ Saved {size_mb:.1f} MB")
-print(f"    Bands: 1=depth_median(m), 2=depth_std(m), 3=n_observations")
+print("    Bands: 1=depth_median(m), 2=depth_std(m), 3=n_observations")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # STEP 6: Sample at dive sites for sanity check
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[6] Sanity check at known dive sites:")
+print("\n[6] Sanity check at known dive sites:")
 
 SITES = {
     "Pedra do Alto":     {"lat": 37.05815, "lon": -8.20982, "expected": 16},  # 37°03.489'N 008°12.589'W
@@ -424,12 +424,11 @@ with rasterio.open(OUT_TIF) as src:
             print(f"    ✗ {name}: {e}")
 
 # ── Generate preview PNG ──
-print(f"\n[7] Generating preview image...")
+print("\n[7] Generating preview image...")
 try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.colors import LinearSegmentedColormap
 
     fig, axes = plt.subplots(2, 1, figsize=(16, 8))
 
@@ -473,7 +472,7 @@ except Exception as e:
     print(f"    ⚠ preview failed: {e}")
 
 print(f"\n{'='*80}")
-print(f"  ✓ PHASE A COMPLETE")
+print("  ✓ PHASE A COMPLETE")
 print(f"{'='*80}")
 print(f"""
   Generated: {OUT_TIF}

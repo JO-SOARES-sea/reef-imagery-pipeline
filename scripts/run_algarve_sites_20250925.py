@@ -7,9 +7,7 @@ Clips B02/B03 COG bands around each site and runs run_predictor() for BVI + SDB.
 import logging
 import sys
 from pathlib import Path
-import numpy as np
 import rasterio
-from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 import rasterio.crs
 

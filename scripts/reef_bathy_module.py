@@ -46,8 +46,7 @@ import requests
 import rasterio
 from rasterio.crs import CRS
 from rasterio.features import shapes as rasterio_shapes
-from rasterio.transform import from_bounds, Affine
-from rasterio.warp import transform_bounds, reproject, Resampling
+from rasterio.transform import from_bounds
 from scipy.ndimage import (
     uniform_filter,
     label as ndimage_label,

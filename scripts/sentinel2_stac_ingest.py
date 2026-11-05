@@ -10,8 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import datetime
-from typing import List
 
 from src.stac_ingest import (
     EARTH_SEARCH_STAC_URL,

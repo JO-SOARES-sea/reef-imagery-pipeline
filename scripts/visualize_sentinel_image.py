@@ -7,7 +7,6 @@ Loads B02, B03, and TCI bands and creates visualization plots.
 import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from pathlib import Path
 
 # Site coordinates (Algarve reef)
@@ -136,7 +135,7 @@ if __name__ == "__main__":
     print("🛰️  Sentinel-2 Image Visualization")
     print("=" * 50)
     print(f"Site: {SITE_LAT}°N, {SITE_LON}°E (Algarve)")
-    print(f"Tile: T29SNB (September 30, 2024)")
+    print("Tile: T29SNB (September 30, 2024)")
     print("=" * 50)
     
     create_visualizations()

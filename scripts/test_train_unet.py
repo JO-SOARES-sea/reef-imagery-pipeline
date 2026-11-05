@@ -9,7 +9,7 @@ import torch.optim as optim
 sys.path.append(os.path.abspath('.'))
 
 from src.ml_unet_dataset import ReefPatchDataset, get_training_augmentation, get_validation_augmentation
-from src.ml_unet_model import ReefUNet, get_loss_function, calculate_iou
+from src.ml_unet_model import ReefUNet, get_loss_function
 
 def main():
     print("1. Aggregating Dataset...")

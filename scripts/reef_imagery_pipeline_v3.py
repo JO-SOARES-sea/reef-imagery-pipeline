@@ -37,13 +37,11 @@ import json
 import requests
 import numpy as np
 import rasterio
-from rasterio.warp import transform_bounds
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pystac_client import Client
 import planetary_computer as pc
-from datetime import datetime
 
 # Bathymetry module (optional — loaded on demand for --step bathy)
 try:
@@ -81,7 +79,7 @@ try:
     _PROJ_ROOT = Path(__file__).parent.parent
     _TERRAIN_CSV = _PROJ_ROOT / "outputs" / "coastal_topography" / "algarve_coastal_features.csv"
     _TERRAIN_DF = _pd.read_csv(_TERRAIN_CSV) if _TERRAIN_CSV.exists() else None
-    from ranking_model import predict_score, terrain_exposure_modifier
+    from ranking_model import predict_score
     HAS_TERRAIN_SCORE = True
 except Exception:
     _TERRAIN_DF = None

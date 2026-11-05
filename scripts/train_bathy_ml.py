@@ -131,7 +131,6 @@ def build_training_df() -> pd.DataFrame:
 def train_model(df: pd.DataFrame):
     """Train a Random Forest regressor."""
     from sklearn.ensemble import RandomForestRegressor
-    from sklearn.model_selection import cross_val_score
     from sklearn.preprocessing import LabelEncoder
 
     # Prepare features

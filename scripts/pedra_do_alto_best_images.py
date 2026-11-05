@@ -103,12 +103,12 @@ if "wave_height_mean" in df_hist.columns:
     print(f"    Filtered: {len(df_calm)} calm + clear days (wave ≤ 0.8m, vis > 5m)")
 else:
     df_calm = df_hist.nlargest(30, "vis_depth" if "vis_depth" in df_hist.columns else "secchi")
-    print(f"    Top 30 visibility days selected")
+    print("    Top 30 visibility days selected")
 
 # Print top-10 from satellite data
 vis_col = "vis_depth" if "vis_depth" in df_hist.columns else "secchi"
 top10 = df_calm.nlargest(10, vis_col)
-print(f"\n  TOP 10 VISIBILITY DAYS (satellite Kd490):")
+print("\n  TOP 10 VISIBILITY DAYS (satellite Kd490):")
 print(f"  {'#':>3} {'Date':<12} {'Secchi':>7} {'@16m':>7} {'Light%':>7}", end="")
 if "wave_height_mean" in df_hist.columns:
     print(f" {'Wave':>6}", end="")
@@ -127,7 +127,7 @@ for i, (_, r) in enumerate(top10.iterrows(), 1):
 # STEP 2: Search Sentinel-2 STAC for those dates + extra candidates
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[2] Searching Sentinel-2 via Planetary Computer STAC...")
+print("\n[2] Searching Sentinel-2 via Planetary Computer STAC...")
 catalog = Client.open(
     "https://planetarycomputer.microsoft.com/api/stac/v1",
     modifier=pc.sign_inplace
@@ -183,7 +183,7 @@ print(f"    Evaluating top {len(candidates)} scenes...")
 # STEP 3: VSI streaming — read B02/B03/B08, compute quality metrics
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[3] Computing image quality metrics via VSI streaming...")
+print("\n[3] Computing image quality metrics via VSI streaming...")
 
 results = []
 env = rasterio.Env(AWS_NO_SIGN_REQUEST="YES", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR")
@@ -311,7 +311,7 @@ print(f"\r    Processed {len(results)} scenes successfully.         ")
 # STEP 4: Compute Benthic Visibility Index (BVI) and rank
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[4] Computing Benthic Visibility Index...")
+print("\n[4] Computing Benthic Visibility Index...")
 
 df_res = pd.DataFrame(results)
 
@@ -351,7 +351,7 @@ df_res = df_res.sort_values("BVI", ascending=False).reset_index(drop=True)
 # ═══════════════════════════════════════════════════════════════════════════
 
 print(f"\n{'='*80}")
-print(f"  🏆 RANKING — Índice de Visibilidade Bentônica (BVI)")
+print("  🏆 RANKING — Índice de Visibilidade Bentônica (BVI)")
 print(f"  Pedra do Alto | {SITE_LAT:.5f}°N, {abs(SITE_LON):.5f}°W | 16m depth")
 print(f"{'='*80}")
 
@@ -392,7 +392,7 @@ print(f"     Benthic Contrast:    {best['benthic_contrast']:.1f}")
 print(f"     Edge Entropy:        {best['edge_entropy']:.3f}")
 
 # Top 3 recommended dates
-print(f"\n  📋 TOP 3 DATAS RECOMENDADAS:")
+print("\n  📋 TOP 3 DATAS RECOMENDADAS:")
 for i in range(min(3, len(df_res))):
     r = df_res.iloc[i]
     print(f"     {i+1}. {r['date']} — BVI={r['BVI']:.3f} | Kd={r['kd_mean']:.4f} | Clean={r['fft_cleanliness']:.0f}")

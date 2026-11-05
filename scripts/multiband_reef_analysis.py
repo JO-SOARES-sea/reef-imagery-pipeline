@@ -41,7 +41,6 @@ from datetime import datetime, timezone
 
 import numpy as np
 import rasterio
-from rasterio.crs import CRS
 from rasterio.features import shapes as rasterio_shapes
 from scipy.ndimage import uniform_filter, label as ndimage_label
 

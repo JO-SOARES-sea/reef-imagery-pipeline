@@ -14,7 +14,6 @@ _DATA_DIR = _PROJECT_ROOT / "data"
 _FIGURES_DIR = _PROJECT_ROOT / "docs" / "figures"
 from sklearn.ensemble import RandomForestRegressor
 from bs4 import BeautifulSoup
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 

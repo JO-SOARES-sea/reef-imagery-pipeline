@@ -1,10 +1,8 @@
 import geopandas as gpd
 import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
 import numpy as np
 import rasterio
 from rasterio.plot import plotting_extent
-from shapely.geometry import Point
 
 BATHY_PATH = "outputs/santa_eulalia_12m/bathy_emodnet_20260529.tif"
 TRI_PATH = "outputs/santa_eulalia_12m/bathy_emodnet_20260529_tri.tif"

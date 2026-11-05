@@ -922,7 +922,7 @@ class DgtCddDownloaderAlgorithm(QgsProcessingAlgorithm):
             # Create memory layer first
             crs = QgsCoordinateReferenceSystem('EPSG:4326')
             layer = QgsVectorLayer(
-                f"Polygon?crs=EPSG:4326",
+                "Polygon?crs=EPSG:4326",
                 "DGT Download Boundaries",
                 "memory"
             )
@@ -1003,7 +1003,7 @@ class DgtCddDownloaderAlgorithm(QgsProcessingAlgorithm):
             # Create memory layer first
             crs = QgsCoordinateReferenceSystem('EPSG:4326')
             layer = QgsVectorLayer(
-                f"Polygon?crs=EPSG:4326",
+                "Polygon?crs=EPSG:4326",
                 "DGT Download Boundaries",
                 "memory"
             )

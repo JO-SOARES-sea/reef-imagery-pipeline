@@ -228,7 +228,7 @@ def run_training(args: argparse.Namespace) -> None:
     print(f"  Saved to  : {eval_path}")
     print(f"  Checkpoint: {best_path}")
     print(f"  Model root: {model_root}")
-    print(f"  Baseline  : outputs/reef_habitat/model/ (untouched)")
+    print("  Baseline  : outputs/reef_habitat/model/ (untouched)")
     print("──────────────────────────────────────────────────────────────")
 
 

@@ -19,7 +19,7 @@ ROOT_UV = pathlib.Path("/Volumes/4G_WD_BLACK/dev/UnderwaterVisibility")
 sys.path.insert(0, str(ROOT_UV / "reports" / "2026-09-27_ilha_faro_13m"))
 sys.path.insert(0, str(ROOT_UV / "reports" / "2026-10-21_greta_recife"))
 
-from if_analyse import ll2rc, rc2ll, WORK
+from if_analyse import ll2rc, WORK
 from zones import Z
 
 BEST_DAY = "2019-01-10_S2B_R037"

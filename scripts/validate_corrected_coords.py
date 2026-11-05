@@ -10,7 +10,6 @@ import numpy as np
 from pathlib import Path
 from pyproj import Transformer
 import rasterio
-from rasterio.plot import show
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

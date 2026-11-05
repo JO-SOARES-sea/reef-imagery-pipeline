@@ -29,7 +29,6 @@ from torchvision import models, transforms
 from torchvision.models import ResNet18_Weights
 from PIL import Image
 import pandas as pd
-from pathlib import Path
 
 log = logging.getLogger(__name__)
 

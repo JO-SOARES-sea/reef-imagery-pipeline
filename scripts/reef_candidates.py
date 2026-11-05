@@ -210,7 +210,7 @@ def write_figure(result: dict, date: str, out_path: Path) -> None:
 
     # Zoomed on GPS reef
     im1 = ax[1].imshow(np.ma.masked_invalid(like[r0:r1, c0:c1]), cmap="inferno", vmin=0, vmax=1)
-    ax[1].set_title(f"Zoom: Pedra Sta Eulália (GPS ◇)")
+    ax[1].set_title("Zoom: Pedra Sta Eulália (GPS ◇)")
     ax[1].plot(c - c0, r - r0, "co", mfc="none", ms=18, mew=2.5)
     ax[1].axis("off")
     plt.colorbar(im1, ax=ax[1], fraction=0.046, pad=0.04)
@@ -256,7 +256,7 @@ def main() -> None:
                   f"#{cc['rank']} of {result['n_kept']} candidates "
                   f"({cc['area_ha']} ha, mean likelihood {cc['mean_like']})")
     else:
-        print(f"\n  ✗ No GPS reef in any extracted patch — try lowering --percentile")
+        print("\n  ✗ No GPS reef in any extracted patch — try lowering --percentile")
 
 
 if __name__ == "__main__":

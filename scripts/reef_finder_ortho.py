@@ -48,8 +48,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import rasterio
-from rasterio.transform import from_bounds
-from rasterio.warp import reproject, Resampling, calculate_default_transform
+from rasterio.warp import Resampling
 import requests
 
 # Ensure the project root is on sys.path so src.* imports work
@@ -487,8 +486,7 @@ def vectorize_reef_candidates(classification_path: Path,
       dii_mean, ndvi_mean, compactness, substrate_type, confidence
     """
     from rasterio.features import shapes
-    from shapely.geometry import shape, mapping
-    from shapely.ops import unary_union
+    from shapely.geometry import shape
     from pyproj import Transformer
 
     with rasterio.open(str(classification_path)) as src:
@@ -683,7 +681,7 @@ def main():
     work  = Path(args.work_dir)
     out_p = Path(args.output)
 
-    print(f"\n  Reef Finder — Algarve underwater reef detection")
+    print("\n  Reef Finder — Algarve underwater reef detection")
     print(f"  bbox: {args.bbox}   depth: {args.min_depth}–{args.max_depth} m\n")
 
     # 1. Find the clearest Sentinel-2 scene
@@ -735,7 +733,7 @@ def main():
 
     if features:
         print(f"  GeoJSON saved → {out_p}")
-        print(f"  Open in QGIS or load into the dashboard to review candidates.\n")
+        print("  Open in QGIS or load into the dashboard to review candidates.\n")
 
 
 if __name__ == "__main__":

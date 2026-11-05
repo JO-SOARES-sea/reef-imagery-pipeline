@@ -230,17 +230,17 @@ def main():
             print(f"LOCATION: ({result['lon']:.4f}°W, {result['lat']:.4f}°N)")
             print("="*60)
             print(f"\n📊 PREDICTED VISIBILITY SCORE: {result['predicted_visibility_score']:.3f}")
-            print(f"   (0=poor, 1=excellent)")
+            print("   (0=poor, 1=excellent)")
             print(f"\n🌊 BATHYMETRY ZONE: {result['bathymetry_zone']}")
             print(f"   Nearest isobath: {result['nearest_isobath_depth_m']}m at {result['nearest_isobath_distance_m']}m")
-            print(f"\n📏 DISTANCE TO KEY ISOBATHS:")
+            print("\n📏 DISTANCE TO KEY ISOBATHS:")
             if result['dist_to_10m_isobath_m']:
                 print(f"   10m isobath: {result['dist_to_10m_isobath_m']:.0f}m")
             if result['dist_to_20m_isobath_m']:
                 print(f"   20m isobath: {result['dist_to_20m_isobath_m']:.0f}m")
             if result['dist_to_30m_isobath_m']:
                 print(f"   30m isobath: {result['dist_to_30m_isobath_m']:.0f}m")
-            print(f"\n📡 SYNTHETIC S2 PARAMETERS:")
+            print("\n📡 SYNTHETIC S2 PARAMETERS:")
             print(f"   SNR mean: {result['synthetic_snr_mean_16m']}")
             print(f"   Kd(490): {result['synthetic_kd_b02']}")
             print(f"   Transmittance: {result['synthetic_transmittance']}")

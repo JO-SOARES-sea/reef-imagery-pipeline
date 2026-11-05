@@ -142,7 +142,7 @@ def main():
     print("=" * 80)
 
     # ── STEP 1: Search Sentinel-2 via STAC ─────────────────────────────────────
-    print(f"\n[1] Searching Sentinel-2 L2A via Planetary Computer STAC...")
+    print("\n[1] Searching Sentinel-2 L2A via Planetary Computer STAC...")
     catalog = Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
         modifier=pc.sign_inplace,
@@ -198,8 +198,8 @@ def main():
     print(f"    Stratified selection: {len(candidates)} candidates across all months")
 
     # ── STEP 2: Download local window + compute BVI metrics ─────────────────────
-    print(f"\n[2] Downloading local windows + computing BVI metrics...")
-    print(f"    LOCAL cloud check: B02>0.18 OR (B02>0.12 AND B08>0.12) = cloud at GPS")
+    print("\n[2] Downloading local windows + computing BVI metrics...")
+    print("    LOCAL cloud check: B02>0.18 OR (B02>0.12 AND B08>0.12) = cloud at GPS")
 
     results = []
     env = rasterio.Env(AWS_NO_SIGN_REQUEST="YES", GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR")
@@ -229,7 +229,7 @@ def main():
                 if "B08" in item.assets:
                     with rasterio.open(item.assets["B08"].href) as src:
                         b08_arr = src.read(1, window=window).astype(np.float32)
-        except Exception as e:
+        except Exception:
             continue
 
         b02 = np.clip(b02_arr / 10000.0, 0, 1.5)
@@ -288,7 +288,7 @@ def main():
         sys.exit(1)
 
     # ── STEP 3: BVI scoring with LOCAL cloud penalty ────────────────────────────
-    print(f"\n[3] Computing BVI with local cloud penalty...")
+    print("\n[3] Computing BVI with local cloud penalty...")
 
     df = pd.DataFrame(results)
 
@@ -318,7 +318,7 @@ def main():
 
     # ── STEP 4: Results ────────────────────────────────────────────────────────
     print(f"\n{'='*80}")
-    print(f"  CANONICAL ML BVI RANKING — Pedra de Santa Eulalia")
+    print("  CANONICAL ML BVI RANKING — Pedra de Santa Eulalia")
     print(f"  {lat:.6f} N, {abs(lon):.6f} W | Depth: {depth}m")
     print(f"{'='*80}")
 
@@ -366,7 +366,7 @@ def main():
         print(f"     Signal:          {best['raw_mean']:.3f}")
 
     # Top 5
-    print(f"\n  TOP 5 RECOMMENDED:")
+    print("\n  TOP 5 RECOMMENDED:")
     for i in range(min(5, len(df_ok))):
         r = df_ok.iloc[i]
         print(f"     {i+1}. {r['date']} — BVI={r['BVI']:.3f} | Mode={r['ml_mode']} | "

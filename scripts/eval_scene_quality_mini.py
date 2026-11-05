@@ -390,7 +390,7 @@ def _write_log(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with open(log_path, "w") as f:
-        f.write(f"Scene-quality ranking run\n")
+        f.write("Scene-quality ranking run\n")
         f.write(f"  timestamp (UTC) : {ts}\n")
         f.write(f"  bbox            : {args.bbox}\n")
         f.write(f"  date_range      : {args.date_range}\n")
@@ -402,7 +402,7 @@ def _write_log(
         f.write(f"\n  scenes found    : {n_found}\n")
         f.write(f"  scenes failed   : {n_failed}\n")
         f.write(f"  rows written    : {len(rows)}\n")
-        f.write(f"\n── Top scenes ──\n")
+        f.write("\n── Top scenes ──\n")
         for r in rows:
             f.write(
                 f"  #{r.rank:>2}  {r.scene_id}  cloud={r.cloud_cover_pct:.2f}%  "

@@ -6,7 +6,6 @@ Generates publication-quality scientific figures for the project docs and README
 Reads real data from the repository (BVI metrics, feature importance, SDB models).
 """
 
-import os
 import json
 import sys
 from pathlib import Path

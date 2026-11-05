@@ -15,7 +15,6 @@ Usage:
     # Generates: data/real_pairwise_features.csv, data/real_pairwise_labels.csv
 """
 
-import os
 import sys
 import json
 import logging

@@ -89,7 +89,6 @@ def find_granules_earthaccess(time_start: str, time_end: str) -> list[str]:
 
 def _extract_shallow_photons(gdf) -> list[dict]:
     """Filter one batch GeoDataFrame to 1–15 m true-depth photons."""
-    import numpy as np
 
     h    = gdf["height"].values
     lons = gdf.geometry.x.values
@@ -195,7 +194,6 @@ def main():
 
     # Depth distribution summary
     depths = [p["true_depth_m"] for p in merged]
-    import numpy as np
     for band_min, band_max in [(1, 5), (5, 10), (10, 15), (15, 20), (20, 30)]:
         n = sum(1 for d in depths if band_min <= d < band_max)
         log.info("  %2d–%2d m: %d photons", band_min, band_max, n)

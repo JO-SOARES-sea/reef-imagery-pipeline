@@ -77,7 +77,7 @@ def main_interactive_loop(argenta_ml, fetcher):
             print(f"  [3] Altura Doca (Prevista):       {previsao['altura_doca_prevista_pura']:.2f} m")
             print(f"  [4] Altura Doca (+ Segurança):    {previsao['altura_doca_com_viés_segurança']:.2f} m")
             print("-" * 50)
-            print(f"  🌊 Próximos Picos (Barra):")
+            print("  🌊 Próximos Picos (Barra):")
             print(f"     - {info_pico_1}")
             print(f"     - {info_pico_2}")
             print(f"  🌙 Fase da Lua: {moon_details}")
@@ -86,7 +86,7 @@ def main_interactive_loop(argenta_ml, fetcher):
             if "LIVRE" in previsao['DECISAO_SEGURANCA']:
                 print(f"  🟢 VEREDICTO: PASSE LIVRE - {previsao['altura_doca_com_viés_segurança']:.2f}m (Altura <= {argenta_ml.BRIDGE_LIMIT_M:.2f}m)")
             else:
-                print(f"  🔴 VEREDICTO: PONTE BLOQUEADA - RISCO DE COLISÃO")
+                print("  🔴 VEREDICTO: PONTE BLOQUEADA - RISCO DE COLISÃO")
             print("="*50)
 
         except ValueError as e:
@@ -147,7 +147,7 @@ def run_single_prediction(argenta_ml, fetcher, user_input):
         print(f"  [3] Altura Doca (Prevista):       {previsao['altura_doca_prevista_pura']:.2f} m")
         print(f"  [4] Altura Doca (+ Segurança):    {previsao['altura_doca_com_viés_segurança']:.2f} m")
         print("-" * 50)
-        print(f"  🌊 Próximos Picos (Barra):")
+        print("  🌊 Próximos Picos (Barra):")
         print(f"     - {info_pico_1}")
         print(f"     - {info_pico_2}")
         print(f"  🌙 Fase da Lua: {moon_details}")
@@ -156,7 +156,7 @@ def run_single_prediction(argenta_ml, fetcher, user_input):
         if "LIVRE" in previsao['DECISAO_SEGURANCA']:
             print(f"  🟢 VEREDICTO: PASSE LIVRE - {previsao['altura_doca_com_viés_segurança']:.2f}m (Altura <= {argenta_ml.BRIDGE_LIMIT_M:.2f}m)")
         else:
-            print(f"  🔴 VEREDICTO: PONTE BLOQUEADA - RISCO DE COLISÃO")
+            print("  🔴 VEREDICTO: PONTE BLOQUEADA - RISCO DE COLISÃO")
         print("="*50)
 
     except ValueError as e:

@@ -8,7 +8,6 @@ from rasterio.windows import from_bounds
 import planetary_computer as pc
 from pystac_client import Client
 import warnings
-import sys
 
 # Suppress rasterio warnings about block sizes
 warnings.filterwarnings("ignore")

@@ -4,7 +4,6 @@ demo_bathy_live.py
 Demonstração ao vivo da integração IH Isobatas + SDB Stumpf
 com os TIFs reais do projeto (reef_Output_Master).
 """
-import json
 import logging
 import sys
 from pathlib import Path
@@ -104,7 +103,7 @@ def run_spot(spot):
     b03, _,       _      = load_raster_wgs84(b03_path)
     min_lat, min_lon, max_lat, max_lon = bounds
 
-    print(f"\n📦 Raster carregado")
+    print("\n📦 Raster carregado")
     print(f"   Shape    : {b02.shape}")
     print(f"   BOA B02  : min={b02[b02>0].min():.4f}  max={b02.max():.4f}  "
           f"mean={b02[b02>0].mean():.4f}")
@@ -112,7 +111,7 @@ def run_spot(spot):
           f"lat [{min_lat:.4f} → {max_lat:.4f}]")
 
     # ── 2. Buscar isóbatas IH ────────────────────────────────────────────────
-    print(f"\n🌊 A consultar serviço IH DGRM ...")
+    print("\n🌊 A consultar serviço IH DGRM ...")
     DEG = 3000 / 111_000
     features = fetch_isobaths_for_bbox(
         min_lon=lon - DEG, min_lat=lat - DEG,
@@ -124,7 +123,7 @@ def run_spot(spot):
 
     # ── 3. Classificação de zona ─────────────────────────────────────────────
     zone = classify_benthic_zone(lon, lat, features)
-    print(f"\n📍 Classificação de Zona Bentónica")
+    print("\n📍 Classificação de Zona Bentónica")
     print(f"   Zona              : {zone['zone']}")
     print(f"   Isóbata mais próx.: {zone['nearest_isobath']}")
     print(f"   Dist. → 10m       : {zone['dist_10m_m']} m")
@@ -134,7 +133,7 @@ def run_spot(spot):
     print(f"   Nota              : {zone['note']}")
 
     # ── 4. Calibração Stumpf ─────────────────────────────────────────────────
-    print(f"\n🔧 Calibração Stumpf SDB com isóbatas IH ...")
+    print("\n🔧 Calibração Stumpf SDB com isóbatas IH ...")
     m0, m1, cal = calibrate_stumpf_from_isobaths(b02, b03, features, bounds)
     if cal["calibrated"]:
         print(f"   ✅ Calibrado com {cal['n_samples']} amostras")
@@ -145,10 +144,10 @@ def run_spot(spot):
     else:
         print(f"   ⚠️  Não calibrado ({cal['n_samples']} amostras) — "
               f"a usar defaults m0={m0:.1f}  m1={m1:.1f}")
-        print(f"   Motivo: poucos pixels próximos das isóbatas no raster")
+        print("   Motivo: poucos pixels próximos das isóbatas no raster")
 
     # ── 5. Gerar mapa SDB ────────────────────────────────────────────────────
-    print(f"\n🗺️  A gerar mapa SDB (Stumpf log-ratio) ...")
+    print("\n🗺️  A gerar mapa SDB (Stumpf log-ratio) ...")
     sdb = stumpf_sdb(b02, b03, m0=m0, m1=m1)
     valid = sdb[sdb > 0]
     print(f"   Pixels válidos : {len(valid):,} / {sdb.size:,} "
@@ -160,7 +159,7 @@ def run_spot(spot):
     # Distribuição por classes de profundidade
     bins = [(0,5,"0–5m"), (5,10,"5–10m"), (10,20,"10–20m"),
             (20,30,"20–30m"), (30,40,"30–40m")]
-    print(f"\n   Distribuição de profundidade estimada:")
+    print("\n   Distribuição de profundidade estimada:")
     for lo, hi, label in bins:
         n = ((sdb >= lo) & (sdb < hi)).sum()
         pct = 100 * n / max(1, len(valid))
@@ -168,7 +167,7 @@ def run_spot(spot):
         print(f"   {label:8s}  {bar:<25s}  {pct:5.1f}%  ({n:,} px)")
 
     # ── 6. Validação SDB vs carta náutica ────────────────────────────────────
-    print(f"\n📐 Validação SDB vs carta náutica IH ...")
+    print("\n📐 Validação SDB vs carta náutica IH ...")
     val = validate_sdb_vs_chart(sdb, features, bounds)
     per = val.get("per_isobath", {})
     ov  = val.get("overall", {})
@@ -204,7 +203,7 @@ def run_spot(spot):
 if __name__ == "__main__":
     print(f"\n{'='*66}")
     print("  DEMO: IH Isobatas + Calibração Stumpf SDB + Validação")
-    print(f"  Serviço: DGRM/IH ArcGIS REST  —  Escala 1:150.000")
+    print("  Serviço: DGRM/IH ArcGIS REST  —  Escala 1:150.000")
     print(f"{'='*66}")
 
     for spot in SPOTS:

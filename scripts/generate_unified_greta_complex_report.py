@@ -19,7 +19,7 @@ ROOT_UV = pathlib.Path("/Volumes/4G_WD_BLACK/dev/UnderwaterVisibility")
 sys.path.insert(0, str(ROOT_UV / "reports" / "2026-09-27_ilha_faro_13m"))
 sys.path.insert(0, str(ROOT_UV / "reports" / "2026-10-21_greta_recife"))
 
-from if_analyse import ll2rc, rc2ll, WORK
+from if_analyse import ll2rc, WORK
 from zones import Z
 
 BEST_DAY = "2019-01-10_S2B_R037"
@@ -471,9 +471,9 @@ def main():
         sum_texts = [
             "• Continuidade Estrutural da Greta: A Pedra da Greta inicia-se junto à marca histórica PEDRA0 e prolonga-se por 2,94 km no rumo 129°–130°,",
             "  constituindo uma crista rochosa estreita, nítida e saliente sobre a isóbata dos 14–15 m (ZH).",
-            f"• Relação com os LÍRIOS: A marca de sonda 'Lírios' (36°57,853' N 007°58,610' W, prof: 17,6 m) situa-se a apenas 955 m a sul (rumo 172°)",
+            "• Relação com os LÍRIOS: A marca de sonda 'Lírios' (36°57,853' N 007°58,610' W, prof: 17,6 m) situa-se a apenas 955 m a sul (rumo 172°)",
             "  da ponta SE da Greta, constituindo o flanco mais profundo da formação submarina na transição para a vasa/areia profunda.",
-            f"• Relação com as LAGES: A marca de sonda 'Lages' (36°57,898' N 007°57,579' W, prof: 13,6 m) situa-se a 1 865 m a ESE (rumo 118°) da Greta",
+            "• Relação com as LAGES: A marca de sonda 'Lages' (36°57,898' N 007°57,579' W, prof: 13,6 m) situa-se a 1 865 m a ESE (rumo 118°) da Greta",
             "  e a 1 529 m dos Lírios (rumo 87°), no prolongamento batimétrico natural do recife a nascente.",
             "• Deteção Ótica e Critérios Físicos: Crista confirmada pela textura escura multi-temporal persistente em 22 passagens R037 (2017–2026).",
             "  Profundidades referidas ao Zero Hidrográfico (ZH ≈ LAT); em operação náutica de mergulho ou pesca com sonda somar a altura da maré."

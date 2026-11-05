@@ -56,7 +56,6 @@ import argparse
 import json
 import logging
 import os
-import sys
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -92,8 +91,8 @@ def find_phase_a_sdb(date_str: str) -> Path | None:
     """
     candidates = [
         _PHASE_A_ROOT / "reef_output_acolite_comparison" / f"predictor_A_{date_str}" / "sdb_depth_map.tif",
-        _PHASE_A_ROOT / f"reef_output_v3" / f"ratio_B02_B03_{date_str}.tif",
-        _PHASE_A_ROOT / f"reef_output_v3" / "sdb_depth_map.tif",
+        _PHASE_A_ROOT / "reef_output_v3" / f"ratio_B02_B03_{date_str}.tif",
+        _PHASE_A_ROOT / "reef_output_v3" / "sdb_depth_map.tif",
     ]
     for p in candidates:
         if p.is_file():

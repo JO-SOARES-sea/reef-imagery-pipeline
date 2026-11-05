@@ -13,11 +13,9 @@ Requires PLANET_API_KEY environment variable (free trial at planet.com/explorer)
 """
 
 import argparse
-import base64
 import json
 import os
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
@@ -138,7 +136,7 @@ def process_and_download(scene, lat, lon, buffer_m, api_key, output_dir):
             band_map[key] = assets[key]["href"]
 
     if not band_map:
-        print(f"     ⚠️  Sem bandas disponíveis")
+        print("     ⚠️  Sem bandas disponíveis")
         return None
 
     results = {}
@@ -199,7 +197,7 @@ def main():
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print(f"  PLANET HIGH-RES SEARCH")
+    print("  PLANET HIGH-RES SEARCH")
     print(f"  {lat:.6f}N, {abs(lon):.6f}W | {date_start} → {date_end}")
     print(f"  Buffer: ±{args.buffer}m | Top {args.top_n} scenes")
     print("=" * 60)

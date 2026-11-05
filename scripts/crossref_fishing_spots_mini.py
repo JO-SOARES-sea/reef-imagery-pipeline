@@ -55,10 +55,8 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -207,7 +205,6 @@ def _write_overlay_png(
     try:
         import matplotlib
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt  # type: ignore
     except Exception:
         log.warning("matplotlib not available — skipping overlay PNG")
         return False

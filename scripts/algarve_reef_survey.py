@@ -29,7 +29,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 from download_multiband_s2 import download_multiband

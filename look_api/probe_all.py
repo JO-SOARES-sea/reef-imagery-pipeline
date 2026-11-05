@@ -20,14 +20,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 import time
-import urllib.parse
-import urllib.request
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -801,7 +797,7 @@ def discover_opentopo_key() -> str | None:
     # 1. Check environment variable
     env_key = os.environ.get("OPENTOPOGRAPHY_API_KEY")
     if env_key:
-        print(f"  ✅ Found key in environment (OPENTOPOGRAPHY_API_KEY) …")
+        print("  ✅ Found key in environment (OPENTOPOGRAPHY_API_KEY) …")
         res = _test_ot_key(env_key)
         print(f"  → Result: {res}")
         if res == "OK":
@@ -816,7 +812,7 @@ def discover_opentopo_key() -> str | None:
                     match = re.search(r"OPENTOPOGRAPHY_API_KEY\s*=\s*['\"]?([a-zA-Z0-9_\-]+)['\"]?", content)
                     if match:
                         key = match.group(1).strip()
-                        print(f"  ✅ Found key in .env file …")
+                        print("  ✅ Found key in .env file …")
                         res = _test_ot_key(key)
                         print(f"  → Result: {res}")
                         if res == "OK":
@@ -1007,7 +1003,7 @@ def print_report(results: list[ProbeResult], bbox: tuple):
     }
 
     print(f"\n{'═'*70}")
-    print(f"  Reef Pipeline — Public Data API Probe")
+    print("  Reef Pipeline — Public Data API Probe")
     print(f"  bbox: {_bbox_str(bbox)}   {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"{'═'*70}")
 

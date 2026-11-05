@@ -33,7 +33,6 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -70,7 +69,7 @@ def _coastsat_download(
     Returns a dict {band_name: Path} pointing to the BOA TIFs, or None on failure.
     """
     try:
-        from coastsat import SDS_download, SDS_preprocess, SDS_tools  # type: ignore
+        from coastsat import SDS_download, SDS_tools  # type: ignore
         import ee
 
         ee.Initialize()

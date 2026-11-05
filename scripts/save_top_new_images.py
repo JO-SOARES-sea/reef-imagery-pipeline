@@ -5,7 +5,6 @@ import os
 from pathlib import Path
 from src.enhancer import fetch_vsi_patch
 from skimage.restoration import denoise_nl_means, estimate_sigma
-import sys
 
 lat = 37.05811
 lon = -8.20978

@@ -22,23 +22,18 @@ Sources:
 """
 import sys, os, warnings; warnings.filterwarnings("ignore")
 import argparse
-import json
 import logging
 import numpy as np
-from datetime import datetime
 from pathlib import Path
 
 import requests
 import rasterio
-from rasterio.transform import from_bounds
 from pyproj import Transformer
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-from src.sensor_config import get_sensor, PLEIADES_NEO
-from src.atmospheric_corrector import AtmosphericCorrector
 
 log = logging.getLogger("pleiades_download")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

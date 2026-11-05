@@ -13,7 +13,6 @@ Uso:
     --dates 2025-09-15 2025-09-25 2024-09-30 2025-09-02 2022-09-26
 """
 import argparse
-import sys
 import numpy as np
 import pandas as pd
 import cv2
@@ -327,7 +326,7 @@ def run(lat, lon, depth, dates, buffer_m, top_k):
         )
 
     if len(df_rejected) > 0:
-        print(f"\n  ── REJECTED (>5%% local cloud) ──")
+        print("\n  ── REJECTED (>5%% local cloud) ──")
         for i, r in df_rejected.iterrows():
             print(f"  ✗  {r['date']:<12} Local: {r['local_cloud_pct']:>5.1f}%  "
                   f"STAC: {r['stac_cloud_cover']:>5.1f}%  SNR: {r['snr_mean']:.1f}  "

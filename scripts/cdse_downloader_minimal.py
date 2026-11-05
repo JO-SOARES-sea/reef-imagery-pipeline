@@ -181,7 +181,7 @@ def list_r10m_bands(token: str) -> list[dict]:
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     print(f"\n{'='*65}")
-    print(f" CDSE Sentinel-2 Downloader")
+    print(" CDSE Sentinel-2 Downloader")
     print(f" Data: {TARGET_DATE}  |  Tile: {TILE}  |  Secchi: 23.6m")
     print(f" User: {CDSE_USER}")
     print(f"{'='*65}\n")

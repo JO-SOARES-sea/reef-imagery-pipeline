@@ -26,7 +26,6 @@ from pathlib import Path
 import numpy as np
 import rasterio
 from rasterio.windows import Window
-from rasterio.transform import rowcol
 from pyproj import Transformer
 from pystac_client import Client
 

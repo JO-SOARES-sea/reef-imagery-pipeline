@@ -12,7 +12,6 @@ import logging
 import math
 from datetime import datetime, timedelta, date as date_obj
 
-import numpy as np
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup

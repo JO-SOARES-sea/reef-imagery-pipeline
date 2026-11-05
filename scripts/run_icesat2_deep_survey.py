@@ -60,7 +60,6 @@ def _extract_seafloor_photons(gdf) -> list[dict]:
     From one batch GeoDataFrame: apply refraction correction and return
     only photons in the 15–30 m true-depth band as plain dicts.
     """
-    import numpy as np
 
     h    = gdf["height"].values
     lons = gdf.geometry.x.values

@@ -8,7 +8,6 @@ Sites: Pedra do Alto, Armação de Atuns, Pedra Sta Eulália + extended coast
 Uses NASA EarthData (earthaccess) to search ATL03 granules.
 """
 import warnings; warnings.filterwarnings("ignore")
-import numpy as np
 import pandas as pd
 from datetime import datetime
 
@@ -45,7 +44,7 @@ SITES = {
 print("="*80)
 print("  ICESat-2 BATIMETRIA LIDAR — Costa Algarvia (0-16m)")
 print(f"  Bounding Box: {BBOX_WEST}°W to {BBOX_EAST}°W, {BBOX_SOUTH}°N to {BBOX_NORTH}°N")
-print(f"  Period: 2018-10-01 to present")
+print("  Period: 2018-10-01 to present")
 print("="*80)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -68,8 +67,8 @@ except Exception:
 # ═══════════════════════════════════════════════════════════════════════════
 
 print("\n[2] Searching ICESat-2 ATL03 granules over Algarve coast...")
-print(f"    Product: ATL03 (Global Geolocated Photon Data)")
-print(f"    This contains raw photon returns including seafloor reflections")
+print("    Product: ATL03 (Global Geolocated Photon Data)")
+print("    This contains raw photon returns including seafloor reflections")
 
 try:
     results_atl03 = earthaccess.search_data(
@@ -88,7 +87,7 @@ except Exception as e:
 # ═══════════════════════════════════════════════════════════════════════════
 
 print("\n[3] Searching ICESat-2 ATL24 (Inland Water Bathymetry)...")
-print(f"    This is the NEW processed bathymetry product (released 2024)")
+print("    This is the NEW processed bathymetry product (released 2024)")
 
 try:
     results_atl24 = earthaccess.search_data(
@@ -124,7 +123,7 @@ except Exception as e:
 # STEP 5: Analyze granule dates and proximity to dive sites
 # ═══════════════════════════════════════════════════════════════════════════
 
-print(f"\n[5] Analyzing temporal coverage...")
+print("\n[5] Analyzing temporal coverage...")
 
 def extract_dates(results, product_name):
     """Extract dates from granules."""
@@ -183,14 +182,14 @@ if atl03_info:
     df_atl03 = pd.DataFrame(atl03_info).drop_duplicates("date").sort_values("date")
     print(f"\n  ATL03 — {len(df_atl03)} unique passes over Algarve coast:")
     print(f"  Period: {df_atl03['date'].iloc[0]} to {df_atl03['date'].iloc[-1]}")
-    print(f"\n  Dates of ICESat-2 passes:")
+    print("\n  Dates of ICESat-2 passes:")
     for i, row in df_atl03.iterrows():
         print(f"    • {row['date']}")
     
     # Group by year
     df_atl03["year"] = pd.to_datetime(df_atl03["date"]).dt.year
     yearly = df_atl03.groupby("year").size()
-    print(f"\n  Passes per year:")
+    print("\n  Passes per year:")
     for y, n in yearly.items():
         print(f"    {y}: {n} passes")
 else:
@@ -221,7 +220,7 @@ print(f"""
 for name, cfg in SITES.items():
     print(f"    • {name}: {cfg['lat']:.5f}°N, {abs(cfg['lon']):.5f}°W ({cfg['depth']}m)")
 
-print(f"""
+print("""
   Potencial para batimetria lidar:
     • Kd490 médio: 0.045–0.080 m⁻¹ (águas claras)
     • Profundidade máx. detetável: ~20–40m (em dias ótimos)

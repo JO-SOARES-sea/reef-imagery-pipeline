@@ -57,7 +57,7 @@ import json
 import logging
 import sys
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -301,9 +301,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"  Waypoints with no depth   : {n_no_depth}  (land / out of raster)")
     print(f"  Survivors (in depth window: {args.min_depth}–{args.max_depth} m) : {len(survivors)}")
     print(f"  Outputs: {out_dir}")
-    print(f"    fishing_spots_all.csv         (all in-bbox waypoints)")
-    print(f"    fishing_spots_filtered.csv    (depth-window survivors — review these)")
-    print(f"    fishing_spots_filtered.geojson (Leaflet / QGIS overlay)")
+    print("    fishing_spots_all.csv         (all in-bbox waypoints)")
+    print("    fishing_spots_filtered.csv    (depth-window survivors — review these)")
+    print("    fishing_spots_filtered.geojson (Leaflet / QGIS overlay)")
     print("──────────────────────────────────────────────────────────────")
     return 0
 

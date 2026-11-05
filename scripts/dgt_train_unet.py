@@ -217,8 +217,8 @@ def main():
     print("REEF U-NET TRAINING v3  —  DGT AMD EPYC-Milan  (CPU-only)")
     print(f"Cores: {os.cpu_count()}  Threads: {NUM_THREADS}  "
           f"Workers: {NUM_WORKERS}  PyTorch: {torch.__version__}")
-    print(f"Arch: ReefUNet features=[64,128,256,512]  ~31M params")
-    print(f"Loss: BCE(pos_weight=20) + SoftDice  |  Sampler: reef×30")
+    print("Arch: ReefUNet features=[64,128,256,512]  ~31M params")
+    print("Loss: BCE(pos_weight=20) + SoftDice  |  Sampler: reef×30")
     print("=" * 60)
 
     train_loader, val_loader = make_loaders()

@@ -15,7 +15,6 @@ Author: Antigravity
 import argparse
 import logging
 import torch
-import torch.nn.functional as F
 from PIL import Image
 from pathlib import Path
 
@@ -70,10 +69,10 @@ def predict_winner(img_a_path, img_b_path, model_path):
     log.info(f"Image B Score: {score_b:.4f} ({img_b_path})")
     
     if score_a > score_b:
-        log.info(f"WINNER: Image A")
+        log.info("WINNER: Image A")
         log.info(f"Confidence (Prob A > B): {prob_a_better:.2%}")
     else:
-        log.info(f"WINNER: Image B")
+        log.info("WINNER: Image B")
         log.info(f"Confidence (Prob B > A): {(1 - prob_a_better):.2%}")
     log.info("=" * 40)
 

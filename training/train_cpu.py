@@ -19,7 +19,6 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Iterator
 
 import torch
 import torch.optim as optim

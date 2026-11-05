@@ -86,7 +86,7 @@ for ax, (title, fpath) in zip(axes, band_files.items()):
     # Mark site centre approximately
     h, w = data.shape
     ax.plot(w//2, h//2, 'r+', markersize=20, markeredgewidth=2.5, label='Site')
-    ax.set_xlabel(f"Secchi 23.6m | Kd490=0.0424 | @22m: B02 trans=39% B03 trans=37%",
+    ax.set_xlabel("Secchi 23.6m | Kd490=0.0424 | @22m: B02 trans=39% B03 trans=37%",
                   color='#aaaaaa', fontsize=9)
     ax.tick_params(colors='white')
 

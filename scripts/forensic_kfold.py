@@ -12,10 +12,8 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader, Subset, WeightedRandomSampler
 import torch.optim as optim
 from sklearn.model_selection import StratifiedKFold
-import rasterio
-import glob
 
-from src.ml_unet_model import ReefUNet, calculate_iou, get_loss_function
+from src.ml_unet_model import ReefUNet, get_loss_function
 
 _DEPTH_LIMIT = 40.0
 class _CachedReefDataset(Dataset):

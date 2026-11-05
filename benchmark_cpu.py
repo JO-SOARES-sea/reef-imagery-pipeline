@@ -239,7 +239,7 @@ def _append_benchmarks_md(results: dict) -> None:
     if val.get("reachable"):
         lines.append(f"| OpenAltimetry latency | {val['api_latency_s']:.2f} s | <10 s | {'✅' if val['api_latency_s']<10 else '❌'} |")
     else:
-        lines.append(f"| OpenAltimetry latency | unreachable | — | ⚠️ |")
+        lines.append("| OpenAltimetry latency | unreachable | — | ⚠️ |")
 
     lines.append("")
     with open(md_path, "a") as fh:

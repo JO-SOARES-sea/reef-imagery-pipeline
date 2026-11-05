@@ -49,7 +49,6 @@ import argparse
 import csv
 import logging
 import sys
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -195,7 +194,7 @@ def _write_md(rows: list[dict], path: Path, n_top: int = 20) -> None:
     bot = valid[-n_top:] if len(valid) > n_top else []
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        f.write(f"# Model scores on named fishing spots\n\n")
+        f.write("# Model scores on named fishing spots\n\n")
         f.write(f"Total scored: {len(rows)}    "
                 f"with patch: {sum(1 for r in rows if r.get('patch_ok'))}    "
                 f"valid model_prob: {len(valid)}\n\n")

@@ -282,9 +282,9 @@ print(f"  Nearest isobath:      {nearest_depth_val}m at {nearest_dist_val:.1f}m"
 print(f"  Bathymetric zone:     {zone}")
 print(f"  Terrain:              {'Shelf' if slope_proxy < 5 else 'Slope' if slope_proxy < 15 else 'Escarpment'}")
 if slope_proxy < 5 and (nearest_depth_val is None or nearest_depth_val <= 20):
-    print(f"  Classification:       Likely shelf/plateau reef with gentle surrounding bathymetry")
+    print("  Classification:       Likely shelf/plateau reef with gentle surrounding bathymetry")
 elif slope_proxy >= 5:
-    print(f"  Classification:       Reef on or near a bathymetric slope/transition")
+    print("  Classification:       Reef on or near a bathymetric slope/transition")
 else:
-    print(f"  Classification:       Insufficient data for definitive classification")
+    print("  Classification:       Insufficient data for definitive classification")
 print("=" * 72)

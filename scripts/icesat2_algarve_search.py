@@ -5,10 +5,7 @@ icesat2_algarve_search.py
 Search ICESat-2 tracks over Algarve coast using NASA CMR API (no auth needed)
 """
 import warnings; warnings.filterwarnings("ignore")
-import json
-import numpy as np
 import pandas as pd
-from datetime import datetime
 import httpx
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -34,7 +31,7 @@ CMR_URL = "https://cmr.earthdata.nasa.gov/search/granules.json"
 print("="*80)
 print("  ICESat-2 BATIMETRIA LIDAR — Costa Algarvia (0-16m)")
 print(f"  BBox: [{BBOX_WEST}, {BBOX_SOUTH}, {BBOX_EAST}, {BBOX_NORTH}]")
-print(f"  Período: 2018-10 → presente")
+print("  Período: 2018-10 → presente")
 print("="*80)
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -117,7 +114,7 @@ if atl03_records:
     df = pd.DataFrame(atl03_records)
     df = df[df["date"] != ""].drop_duplicates("date").sort_values("date")
     
-    print(f"\n  ATL03 — Passes únicas sobre costa Algarvia:")
+    print("\n  ATL03 — Passes únicas sobre costa Algarvia:")
     print(f"  Total: {len(df)} datas")
     print(f"  Período: {df['date'].iloc[0]} → {df['date'].iloc[-1]}")
     
@@ -125,37 +122,37 @@ if atl03_records:
     df["year"] = pd.to_datetime(df["date"]).dt.year
     df["month"] = pd.to_datetime(df["date"]).dt.month
     
-    print(f"\n  Passes por ano:")
+    print("\n  Passes por ano:")
     for y, grp in df.groupby("year"):
         print(f"    {y}: {len(grp)} passes")
     
     # Best months (need clear water = low CHL)
-    print(f"\n  Passes por mês (melhores para batimetria = Set/Out/Jan):")
+    print("\n  Passes por mês (melhores para batimetria = Set/Out/Jan):")
     for m in range(1, 13):
         n = (df["month"] == m).sum()
         best = "⭐" if m in [1, 9, 10, 12] else ""
         print(f"    Mês {m:>2}: {n:>2} passes {best}")
     
     # List all dates
-    print(f"\n  Todas as datas com cobertura ICESat-2:")
+    print("\n  Todas as datas com cobertura ICESat-2:")
     print(f"  {'Date':<12} {'Granule ID':<60}")
     print("  " + "-"*72)
     for _, r in df.iterrows():
         print(f"  {r['date']:<12} {r['granule_id']}")
 
     # Check proximity to dive sites
-    print(f"\n  Notas sobre proximidade aos dive sites:")
-    print(f"  ⚠️  ICESat-2 tem tracks com ~14m de largura e espaçamento ~3km")
-    print(f"     A probabilidade de um track passar EXATAMENTE sobre um")
-    print(f"     dive site é baixa. Os dados são úteis para:")
-    print(f"     • Validar batimetria Sentinel-2 (Stumpf SDB)")
-    print(f"     • Mapa de profundidade da zona costeira")
-    print(f"     • Identificar formações rochosas submersas")
+    print("\n  Notas sobre proximidade aos dive sites:")
+    print("  ⚠️  ICESat-2 tem tracks com ~14m de largura e espaçamento ~3km")
+    print("     A probabilidade de um track passar EXATAMENTE sobre um")
+    print("     dive site é baixa. Os dados são úteis para:")
+    print("     • Validar batimetria Sentinel-2 (Stumpf SDB)")
+    print("     • Mapa de profundidade da zona costeira")
+    print("     • Identificar formações rochosas submersas")
     
     # Cross-reference with visibility model
     # Best dates = ICESat-2 pass + clear water (Sep/Oct/Jan)
     good_months = df[df["month"].isin([1, 9, 10, 12])]
-    print(f"\n  🎯 PASSES EM MESES DE ÁGUA CLARA (Set/Out/Jan/Dez):")
+    print("\n  🎯 PASSES EM MESES DE ÁGUA CLARA (Set/Out/Jan/Dez):")
     print(f"     → {len(good_months)} passes com potencial batimétrico máximo")
     for _, r in good_months.iterrows():
         print(f"     • {r['date']}")

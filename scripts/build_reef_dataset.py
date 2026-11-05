@@ -28,7 +28,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import rasterio
 from rasterio.transform import xy as rio_xy
 
 # Add project root to path

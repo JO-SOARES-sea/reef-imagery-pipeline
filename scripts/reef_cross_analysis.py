@@ -10,7 +10,6 @@ Outputs (written to reef_Output_Master/reef_output_v3/):
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Ensure project root is on the path when running outside the package.
@@ -30,7 +29,6 @@ from rasterio.mask import mask as rio_mask
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -192,8 +190,8 @@ ax1.hist(all_poly_pixels_flat, bins=bins, alpha=0.65, color="#FF5722",
          label=f"Candidates (n={len(all_poly_pixels_flat)})", density=True, edgecolor="none")
 
 ax1.axvline(bg_mean, color="#1565C0", lw=1.5, ls="--", label=f"BG mean {bg_mean:.5f}")
-ax1.axvline(bg_mean + bg_std, color="#1565C0", lw=1.0, ls=":", label=f"BG mean+1σ (sandy)")
-ax1.axvline(bg_mean - bg_std, color="#E65100", lw=1.0, ls=":", label=f"BG mean−1σ (reef threshold)")
+ax1.axvline(bg_mean + bg_std, color="#1565C0", lw=1.0, ls=":", label="BG mean+1σ (sandy)")
+ax1.axvline(bg_mean - bg_std, color="#E65100", lw=1.0, ls=":", label="BG mean−1σ (reef threshold)")
 
 ax1.set_xlabel("B02/B03 ratio", fontsize=11)
 ax1.set_ylabel("Density", fontsize=11)

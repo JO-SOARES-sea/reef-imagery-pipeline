@@ -97,13 +97,13 @@ def _load_model_scores(path: Path) -> dict[tuple[str, str], Candidate]:
             key = (f"{lon:.6f}", f"{lat:.6f}")
             d = r.get("emodnet_depth_m") or ""
             try: d = float(d)
-            except: d = None
+            except Exception: d = None
             mp = r.get("model_prob") or ""
             try: mp = float(mp)
-            except: mp = None
+            except Exception: mp = None
             b04 = r.get("b04_reflectance") or ""
             try: b04 = float(b04)
-            except: b04 = None
+            except Exception: b04 = None
             c = Candidate(
                 name=r.get("name", ""), lon=lon, lat=lat,
                 emodnet_depth_m=d, b04=b04, model_prob=mp,
@@ -127,10 +127,10 @@ def _load_b04_scores(
             key = (f"{lon:.6f}", f"{lat:.6f}")
             d = r.get("emodnet_depth_m") or ""
             try: d = float(d)
-            except: d = None
+            except Exception: d = None
             b04 = r.get("b04_reflectance") or ""
             try: b04 = float(b04)
-            except: b04 = None
+            except Exception: b04 = None
             if key in into:
                 if into[key].b04 is None and b04 is not None:
                     into[key].b04 = b04
@@ -331,7 +331,7 @@ def _write_overlay_png(
             ax.annotate(f"{i+1}", (c.lon, c.lat), color="white", fontsize=6,
                         ha="center", va="center")
         ax.set_xlabel("longitude"); ax.set_ylabel("latitude")
-        ax.set_title(f"EMODnet TRI + top-30 union candidates")
+        ax.set_title("EMODnet TRI + top-30 union candidates")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
         fig.savefig(out_path, dpi=120)
