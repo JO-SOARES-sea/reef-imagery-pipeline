@@ -19,15 +19,15 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.features import shapes
+from affine import Affine
+from rasterio.features import geometry_mask, shapes
 from scipy import stats
 from shapely.geometry import shape
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold
 
 from src.analysis.features import extract_morpho_spectral_features, resample_emodnet_screen
-from src.ingestion.sentinel_reader import build_clean_water_mask, read_sentinel_bands, save_geotiff
+from src.ingestion.sentinel_reader import build_clean_water_mask, read_sentinel_bands
 
 logger = logging.getLogger("reef_pipeline.analysis.segmenter")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -45,6 +45,7 @@ DEFAULT_MODEL_FEATURES = [
     "B03",
     "B04",
     "sdb_m",
+    "sdb_anomaly_m",
 ]
 
 
@@ -115,23 +116,41 @@ class ReefClassifier:
         return reef_proba
 
 
-def train_multi_zone_classifier(
+def _new_random_forest(seed: int = 42) -> RandomForestClassifier:
+    return RandomForestClassifier(
+        n_estimators=100, max_depth=5, min_samples_leaf=3, random_state=seed, class_weight="balanced"
+    )
+
+
+def collect_zone_samples(
     zone_configs: dict[str, dict[str, Any]],
     feature_names: list[str] | None = None,
     exclusion_px: int = 15,
     sample_bg_ratio: int = 20,
     seed: int = 42,
-) -> tuple[ReefClassifier, dict[str, Any]]:
+    depth_matched: bool = True,
+    depth_tol_m: float = 1.0,
+) -> dict[str, dict[str, np.ndarray]]:
     """
-    Treina o modelo supervisionado em todas as zonas do Algarve com Ground Truth disponível.
-    Amostra pontos de fundo arenoso a mais de 150 m (exclusion_px=15) de qualquer cume.
+    Recolhe, por zona, as amostras GT (y=1) e de fundo (y=0, a mais de ``exclusion_px`` pixels de
+    qualquer cume) com as respetivas features e a profundidade EMODnet de cada amostra.
+
+    Com ``depth_matched=True`` (padrão), cada cume recebe ``sample_bg_ratio`` pontos de fundo à
+    mesma profundidade EMODnet (± ``depth_tol_m``). Sem isto, o fundo aleatório está quase sempre a
+    outra profundidade e o modelo aprende "raso vs fundo" (o sinal das bandas inverte-se entre zonas
+    com cumes costeiros e cumes ao largo) em vez de "rocha vs areia".
+
+    Devolve ``{zona: {"X": (n, f), "y": (n,), "depth": (n,), "group": (n,)}}`` (``group`` = índice do
+    cume GT mais próximo, unidade de reamostragem do bootstrap) para permitir treino e
+    validação leave-one-zone-out sem voltar a ler as cenas.
     """
     features_to_use = feature_names or DEFAULT_MODEL_FEATURES
-    X_list, y_list, group_list = [], [], []
+    samples: dict[str, dict[str, np.ndarray]] = {}
 
     logger.info("Coletando amostras de treino multizona (GT vs Fundo arenoso)...")
 
     for z_key, cfg in zone_configs.items():
+        X_list, y_list, depth_list, group_list = [], [], [], []
         scene = read_sentinel_bands(cfg["scene_path"])
         water_mask = build_clean_water_mask(scene, ndwi_threshold=0.0, apply_glint_filter=True)
         depth_m, depth_mask = resample_emodnet_screen(
@@ -147,27 +166,16 @@ def train_multi_zone_classifier(
             df_gt, geometry=gpd.points_from_xy(df_gt.lon, df_gt.lat), crs="EPSG:4326"
         ).to_crs(scene.crs)
 
-        gt_pxs = []
+        # Sítios de mergulho não entram na verdade (ledger E027); só os pontos/píxeis do ground_truth_path.
+        gt_pxs: list[tuple[int, int]] = []
+        gt_cume: list[int] = []  # cume de cada píxel GT: unidade de reamostragem do bootstrap
         with rasterio.open(cfg["scene_path"]) as src:
-            for idx, row in gdf_gt.iterrows():
+            for i, (_, row) in enumerate(gdf_gt.iterrows()):
                 px, py = ~src.transform * (row.geometry.x, row.geometry.y)
                 px, py = int(round(px)), int(round(py))
-                if 0 <= py < src.height and 0 <= px < src.width and analysis_mask[py, px]:
+                if 0 <= py < src.height and 0 <= px < src.width and analysis_mask[py, px] and (py, px) not in gt_pxs:
                     gt_pxs.append((py, px))
-
-            # Adiciona pontos de recifes de mergulho comprovados se incidirem nesta cena
-            dive_csv = PROJECT_ROOT / "data" / "vector" / "algarve_dive_sites.csv"
-            if dive_csv.exists():
-                df_dive = pd.read_csv(dive_csv)
-                gdf_dive = gpd.GeoDataFrame(
-                    df_dive, geometry=gpd.points_from_xy(df_dive.lon, df_dive.lat), crs="EPSG:4326"
-                ).to_crs(scene.crs)
-                for _, row in gdf_dive.iterrows():
-                    px, py = ~src.transform * (row.geometry.x, row.geometry.y)
-                    px, py = int(round(px)), int(round(py))
-                    if 0 <= py < src.height and 0 <= px < src.width and analysis_mask[py, px]:
-                        if (py, px) not in gt_pxs:
-                            gt_pxs.append((py, px))
+                    gt_cume.append(int(row["cume_id"]) if "cume_id" in gdf_gt.columns else i)
 
         bg_candidates = analysis_mask.copy()
         for py, px in gt_pxs:
@@ -175,42 +183,193 @@ def train_multi_zone_classifier(
 
         bg_r, bg_c = np.nonzero(bg_candidates)
         rng = np.random.default_rng(seed)
-        n_bg = min(len(bg_r), max(100, len(gt_pxs) * sample_bg_ratio))
-        pick = rng.choice(len(bg_r), size=n_bg, replace=False)
-        bg_pxs = list(zip(bg_r[pick], bg_c[pick], strict=True))
+        if depth_matched:
+            bg_pxs = _depth_matched_background(
+                gt_pxs, bg_r, bg_c, depth_m, sample_bg_ratio, depth_tol_m, rng
+            )
+        else:
+            n_bg = min(len(bg_r), max(100, len(gt_pxs) * sample_bg_ratio))
+            pick = rng.choice(len(bg_r), size=n_bg, replace=False)
+            bg_pxs = list(zip(bg_r[pick], bg_c[pick], strict=True))
 
-        for r, c in gt_pxs:
-            feats = [float(features[k][r, c]) for k in features_to_use]
-            if np.all(np.isfinite(feats)):
-                X_list.append(feats)
-                y_list.append(1)
-                group_list.append(z_key)
+        # Cada amostra pertence ao cume do píxel GT mais próximo: o bootstrap reamostra cumes, não pixels
+        gt_arr = np.asarray(gt_pxs, dtype=np.float64).reshape(-1, 2)
+        for label, pxs in ((1, gt_pxs), (0, bg_pxs)):
+            for r, c in pxs:
+                feats = [float(features[k][r, c]) for k in features_to_use]
+                if np.all(np.isfinite(feats)):
+                    X_list.append(feats)
+                    y_list.append(label)
+                    depth_list.append(float(depth_m[r, c]))
+                    group_list.append(gt_cume[int(np.argmin(np.hypot(gt_arr[:, 0] - r, gt_arr[:, 1] - c)))] if len(gt_arr) else -1)
 
-        for r, c in bg_pxs:
-            feats = [float(features[k][r, c]) for k in features_to_use]
-            if np.all(np.isfinite(feats)):
-                X_list.append(feats)
-                y_list.append(0)
-                group_list.append(z_key)
+        samples[z_key] = {
+            "X": np.array(X_list, dtype=np.float32).reshape(-1, len(features_to_use)),
+            "y": np.array(y_list, dtype=int),
+            "depth": np.array(depth_list, dtype=np.float32),
+            "group": np.array(group_list, dtype=int),
+        }
 
-    X = np.array(X_list, dtype=np.float32)
-    y = np.array(y_list, dtype=int)
-    groups = np.array(group_list)
+    return samples
 
-    # Validação cruzada estratificada (5-Fold CV)
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-    cv_oof = np.zeros(len(y), dtype=np.float32)
-    for tr, te in skf.split(X, y):
-        m_cv = RandomForestClassifier(
-            n_estimators=100, max_depth=5, min_samples_leaf=3, random_state=seed, class_weight="balanced"
+
+def _depth_matched_background(
+    gt_pxs: list[tuple[int, int]],
+    bg_r: np.ndarray,
+    bg_c: np.ndarray,
+    depth_m: np.ndarray,
+    per_gt: int,
+    tol_m: float,
+    rng: np.random.Generator,
+) -> list[tuple[int, int]]:
+    """Para cada cume, sorteia ``per_gt`` pixels de fundo com profundidade a ± ``tol_m`` da do cume."""
+    bg_depth = depth_m[bg_r, bg_c]
+    chosen: set[tuple[int, int]] = set()
+    for r, c in gt_pxs:
+        d = depth_m[r, c]
+        if not np.isfinite(d):
+            continue
+        idx = np.flatnonzero(np.abs(bg_depth - d) <= tol_m)
+        if len(idx) == 0:
+            continue
+        for i in rng.choice(idx, size=min(per_gt, len(idx)), replace=False):
+            chosen.add((int(bg_r[i]), int(bg_c[i])))
+    return sorted(chosen)
+
+
+def _stack_samples(samples: dict[str, dict[str, np.ndarray]], zones: list[str]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    X = np.concatenate([samples[z]["X"] for z in zones])
+    y = np.concatenate([samples[z]["y"] for z in zones])
+    depth = np.concatenate([samples[z]["depth"] for z in zones])
+    return X, y, depth
+
+
+def leave_one_zone_out(
+    samples: dict[str, dict[str, np.ndarray]],
+    seed: int = 42,
+    n_boot: int = 1000,
+) -> dict[str, dict[str, Any]]:
+    """
+    Validação honesta por zona: cada zona é avaliada por um modelo que nunca viu os seus pontos.
+
+    Para cada zona devolve ``auc`` (modelo completo) e ``auc_depth_only`` (o mesmo Random Forest
+    treinado só com a profundidade EMODnet). Se ``auc`` não for claramente superior a
+    ``auc_depth_only``, o detetor está a reconhecer a profundidade típica dos cumes, não o recife.
+    ``gain_ci95`` é o IC 95% bootstrap de ``auc − auc_depth_only``: com poucos cumes é largo, e um
+    limite inferior <= 0 significa que o ganho não se distingue do ruído.
+    """
+    results: dict[str, dict[str, Any]] = {}
+    for held_out in samples:
+        train_zones = [z for z in samples if z != held_out]
+        X_te, y_te, d_te = samples[held_out]["X"], samples[held_out]["y"], samples[held_out]["depth"]
+        n_gt = int(np.sum(y_te == 1))
+        if not train_zones or n_gt == 0 or n_gt == len(y_te):
+            results[held_out] = {
+                "auc": None,
+                "auc_depth_only": None,
+                "gain": None,
+                "gain_ci95": None,
+                "n_gt": n_gt,
+                "n_bg": int(np.sum(y_te == 0)),
+            }
+            continue
+
+        X_tr, y_tr, d_tr = _stack_samples(samples, train_zones)
+        p_full = _new_random_forest(seed).fit(X_tr, y_tr).predict_proba(X_te)[:, 1]
+        p_depth = _new_random_forest(seed).fit(d_tr.reshape(-1, 1), y_tr).predict_proba(d_te.reshape(-1, 1))[:, 1]
+
+        auc = float(roc_auc_score(y_te, p_full))
+        auc_depth = float(roc_auc_score(y_te, p_depth))
+        gain_lo, gain_hi = _bootstrap_gain_ci(
+            y_te, p_full, p_depth, n_boot=n_boot, seed=seed, groups=samples[held_out].get("group")
         )
-        m_cv.fit(X[tr], y[tr])
+
+        results[held_out] = {
+            "auc": auc,
+            "auc_depth_only": auc_depth,
+            "gain": auc - auc_depth,
+            "gain_ci95": (gain_lo, gain_hi),
+            "n_gt": n_gt,
+            "n_bg": int(np.sum(y_te == 0)),
+        }
+    return results
+
+
+def _bootstrap_gain_ci(
+    y: np.ndarray,
+    p_model: np.ndarray,
+    p_baseline: np.ndarray,
+    n_boot: int = 1000,
+    seed: int = 42,
+    groups: np.ndarray | None = None,
+) -> tuple[float, float]:
+    """
+    IC 95% (bootstrap) da diferença de AUC modelo − linha de base nos mesmos pontos.
+
+    Com ``groups`` (cume de origem de cada amostra) reamostra cumes inteiros: os pixels de um cume e
+    o seu fundo são fortemente autocorrelacionados, e reamostrar pixels dá um IC demasiado estreito.
+    Sem ``groups`` reamostra pixels (estratificado). Devolve ``(nan, nan)`` se não houver réplicas válidas.
+    """
+    rng = np.random.default_rng(seed)
+    gains: list[float] = []
+    if groups is None:
+        pos, neg = np.flatnonzero(y == 1), np.flatnonzero(y == 0)
+        for _ in range(n_boot):
+            idx = np.concatenate([rng.choice(pos, len(pos)), rng.choice(neg, len(neg))])
+            gains.append(roc_auc_score(y[idx], p_model[idx]) - roc_auc_score(y[idx], p_baseline[idx]))
+    else:
+        members = {g: np.flatnonzero(groups == g) for g in np.unique(groups)}
+        keys = list(members)
+        for _ in range(n_boot):
+            idx = np.concatenate([members[keys[k]] for k in rng.integers(0, len(keys), len(keys))])
+            if len(np.unique(y[idx])) < 2:
+                continue
+            gains.append(roc_auc_score(y[idx], p_model[idx]) - roc_auc_score(y[idx], p_baseline[idx]))
+    if len(gains) < 2:
+        return float("nan"), float("nan")
+    lo, hi = np.percentile(gains, (2.5, 97.5))
+    return float(lo), float(hi)
+
+
+def train_multi_zone_classifier(
+    zone_configs: dict[str, dict[str, Any]],
+    feature_names: list[str] | None = None,
+    exclusion_px: int = 15,
+    sample_bg_ratio: int = 20,
+    seed: int = 42,
+    exclude_zones: list[str] | None = None,
+    samples: dict[str, dict[str, np.ndarray]] | None = None,
+) -> tuple[ReefClassifier, dict[str, Any]]:
+    """
+    Treina o modelo supervisionado nas zonas do Algarve com Ground Truth disponível.
+
+    ``exclude_zones`` deixa zonas fora do treino — use-o para avaliar uma zona com um modelo
+    que nunca viu os seus pontos (as métricas dessa zona com o modelo completo são in-sample).
+    ``samples`` (de :func:`collect_zone_samples`) evita voltar a ler as cenas.
+    """
+    features_to_use = feature_names or DEFAULT_MODEL_FEATURES
+    if samples is None:
+        samples = collect_zone_samples(zone_configs, features_to_use, exclusion_px, sample_bg_ratio, seed)
+
+    train_zones = [z for z in samples if z not in (exclude_zones or [])]
+    X, y, _ = _stack_samples(samples, train_zones)
+    groups = np.concatenate([np.full(len(samples[z]["y"]), z) for z in train_zones])
+
+    # CV agrupada por zona (leave-one-zone-out): folds aleatórios misturam cumes vizinhos
+    # entre treino e teste e inflacionam a AUC por autocorrelação espacial
+    cv_oof = np.full(len(y), np.nan, dtype=np.float32)
+    for z in train_zones:
+        te = groups == z
+        if te.all() or not np.any(y[te] == 1):
+            continue
+        m_cv = _new_random_forest(seed).fit(X[~te], y[~te])
         cv_oof[te] = m_cv.predict_proba(X[te])[:, 1]
 
-    cv_auc = float(roc_auc_score(y, cv_oof))
-    logger.info(f"Validação Cruzada 5-Fold Stratified CV ROC-AUC: {cv_auc:.3f}")
+    scored = np.isfinite(cv_oof)
+    cv_auc = float(roc_auc_score(y[scored], cv_oof[scored])) if scored.any() and len(set(y[scored])) == 2 else None
+    logger.info(f"Validação Cruzada Leave-One-Zone-Out ROC-AUC ({len(train_zones)} zonas): {cv_auc}")
 
-    # Treina o classificador final sobre o dataset completo
+    # Treina o classificador final sobre as zonas de treino
     clf = ReefClassifier(feature_names=features_to_use)
     clf.fit(X, y)
 
@@ -218,6 +377,7 @@ def train_multi_zone_classifier(
         "n_samples": len(y),
         "n_gt": int(np.sum(y == 1)),
         "n_bg": int(np.sum(y == 0)),
+        "train_zones": train_zones,
         "cv_auc_oof": cv_auc,
         "feature_importances": dict(zip(features_to_use, clf.model.feature_importances_, strict=True)),
     }
@@ -258,6 +418,70 @@ def compute_reef_probability_absolute(
     return reef_proba
 
 
+PHYSICAL_FEATURE = "sdb_anomaly_m"
+
+
+def compute_reef_probability_physical(
+    features: dict[str, np.ndarray],
+    water_mask: np.ndarray,
+    depth_mask: np.ndarray,
+    flagged_fraction: float = 0.05,
+) -> np.ndarray:
+    """
+    Regra física sem treino: rocha com macroalgas é mais escura que areia à mesma profundidade,
+    pelo que a anomalia ``sdb_m − EMODnet`` (metros, > 0 = fundo mais escuro) é positiva nos recifes.
+
+    A anomalia passa por uma logística centrada no percentil ``1 − flagged_fraction`` da própria
+    zona (p = 0.5 nos ~5% de água mais escura para a sua profundidade). Não usa Ground Truth, pelo
+    que a sua avaliação contra o GT não tem fuga de dados.
+    """
+    analysis_mask = water_mask & depth_mask
+    anom = features.get(PHYSICAL_FEATURE)
+    if anom is None:
+        raise KeyError(f"Feature '{PHYSICAL_FEATURE}' em falta: extraia as features com depth_emodnet.")
+
+    valid = analysis_mask & np.isfinite(anom)
+    if not valid.any():
+        return np.zeros(anom.shape, dtype=np.float32)
+
+    p50, p_hi = np.percentile(anom[valid], (50, 100 * (1 - flagged_fraction)))
+    scale = max((p_hi - p50) / 3.0, 1e-3)
+    with np.errstate(over="ignore", invalid="ignore"):
+        proba = 1.0 / (1.0 + np.exp(-(anom - p_hi) / scale))
+    return np.where(valid, proba, 0.0).astype(np.float32)
+
+
+def evaluate_physical_rule(
+    zone_samples: dict[str, np.ndarray],
+    feature_names: list[str] | None = None,
+    n_boot: int = 1000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Avalia a regra física numa zona sobre amostras com fundo à mesma profundidade (de
+    :func:`collect_zone_samples`), no mesmo formato de :func:`leave_one_zone_out`.
+
+    ``auc`` é a da anomalia de escurecimento (sem treino); ``auc_depth_only`` a da profundidade
+    EMODnet nas mesmas amostras (~0.5 por construção). ``gain_ci95`` é o IC 95% bootstrap da diferença.
+    """
+    i = (feature_names or DEFAULT_MODEL_FEATURES).index(PHYSICAL_FEATURE)
+    y, x, d = zone_samples["y"], zone_samples["X"][:, i].astype(np.float64), zone_samples["depth"].astype(np.float64)
+    n_gt = int(np.sum(y == 1))
+    if n_gt == 0 or n_gt == len(y):
+        return {"auc": None, "auc_depth_only": None, "gain": None, "gain_ci95": None, "n_gt": n_gt, "n_bg": int(np.sum(y == 0))}
+
+    auc = float(roc_auc_score(y, x))
+    auc_depth = float(roc_auc_score(y, d))
+    return {
+        "auc": auc,
+        "auc_depth_only": auc_depth,
+        "gain": auc - auc_depth,
+        "gain_ci95": _bootstrap_gain_ci(y, x, d, n_boot=n_boot, seed=seed, groups=zone_samples.get("group")),
+        "n_gt": n_gt,
+        "n_bg": int(np.sum(y == 0)),
+    }
+
+
 def compute_reef_probability_map(
     features: dict[str, np.ndarray],
     water_mask: np.ndarray,
@@ -269,8 +493,12 @@ def compute_reef_probability_map(
     Gera o mapa de probabilidade de recife rochoso natural:
     - mode="supervised": Utiliza o modelo preditivo calibrado com o Ground Truth multifeixe.
     - mode="absolute": Utiliza limiares físicos absolutos independentes da cena.
+    - mode="physical": Anomalia de escurecimento à mesma profundidade (sem treino).
     """
     analysis_mask = water_mask & depth_mask
+
+    if mode == "physical":
+        return compute_reef_probability_physical(features, water_mask, depth_mask)
 
     if mode == "supervised" and model is not None and model.is_fitted:
         return model.predict_proba_map(features, analysis_mask)
@@ -396,7 +624,7 @@ def extract_candidate_reefs(
     threshold: float = 0.50,
     min_area_m2: float = 500.0,
 ) -> gpd.GeoDataFrame:
-    """Extrai aglomerados e polígonos contíguos de recifes prováveis."""
+    """Extrai aglomerados e polígonos contíguos de recifes prováveis com prob_max e prob_mean exatos."""
     logger.info(f"Vetorizando candidatos com probabilidade >= {threshold}...")
     binary_mask = (reef_proba >= threshold).astype(np.uint8)
 
@@ -408,14 +636,39 @@ def extract_candidate_reefs(
         geom = shape(geom_dict)
         area_m2 = geom.area
         if area_m2 >= min_area_m2:
+            # Máscara só na janela do polígono: O(área do polígono), não O(cena) por candidato
+            minx, miny, maxx, maxy = geom.bounds
+            (c0, r0), (c1, r1) = ~transform @ (minx, maxy), ~transform @ (maxx, miny)
+            r_lo, r_hi = max(0, int(np.floor(min(r0, r1)))), min(reef_proba.shape[0], int(np.ceil(max(r0, r1))) + 1)
+            c_lo, c_hi = max(0, int(np.floor(min(c0, c1)))), min(reef_proba.shape[1], int(np.ceil(max(c0, c1))) + 1)
+            win_proba = reef_proba[r_lo:r_hi, c_lo:c_hi]
+            poly_px_mask = geometry_mask(
+                [geom_dict],
+                out_shape=win_proba.shape,
+                transform=transform @ Affine.translation(c_lo, r_lo),
+                invert=True,
+            )
+            valid_px = poly_px_mask & (binary_mask[r_lo:r_hi, c_lo:c_hi] == 1) & np.isfinite(win_proba)
+            if np.any(valid_px):
+                px_vals = win_proba[valid_px]
+                prob_max = round(float(np.max(px_vals)), 4)
+                prob_mean = round(float(np.mean(px_vals)), 4)
+            else:
+                prob_max = 0.0
+                prob_mean = 0.0
             records.append({
                 "geometry": geom,
                 "area_m2": round(area_m2, 1),
+                "prob_max": prob_max,
+                "prob_mean": prob_mean,
             })
 
     if not records:
         logger.warning("Nenhum candidato a recife encontrado com o limiar especificado.")
-        return gpd.GeoDataFrame(columns=["geometry", "area_m2"], crs=crs)
+        return gpd.GeoDataFrame(
+            columns=["geometry", "area_m2", "prob_max", "prob_mean"],
+            crs=crs,
+        )
 
     gdf = gpd.GeoDataFrame(records, crs=crs)
     logger.info(f"Detetados {len(gdf)} aglomerados de recife natural (área mínima: {min_area_m2} m²).")

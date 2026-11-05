@@ -59,7 +59,7 @@ psutil>=5.9.0                   # cross-platform RSS memory measurement
 # copernicusmarine>=1.0.0       # heavy; install only when live Kd490 is needed
 
 # ── Multimodal & Decision Engine (Gemini & TypeSafe Jev) ─────────────────────
-typesafe-sdk>=0.3.0
+typesafe-sdk>=0.7.5
 google-genai>=0.1.0
 
 # ── Dev / test ────────────────────────────────────────────────────────────────

@@ -86,6 +86,14 @@ def extract_features_from_stac(row, depth):
     }
 
 
+def calculate_physics_score(row, depth):
+    """Pontuação de visibilidade (0-100) de uma cena STAC: motor físico + modelo de ranking.
+
+    Nome histórico, usado por scripts/hybrid_stac_physical_orchestrator.py e scripts/evaluate_all_shortlist.py.
+    """
+    return predict_score(extract_features_from_stac(row, depth))["score"]
+
+
 def predict_top_5_days(lat, lon, depth, years_back=4):
     # Drift monitoring: reset at batch start (shadow mode, best-effort)
     _has_drift = False
@@ -140,11 +148,7 @@ def predict_top_5_days(lat, lon, depth, years_back=4):
     df = pd.DataFrame(data)
 
     # Aplicar Motor Físico + Modelo de Ranking ML
-    def apply_ranker(r):
-        features = extract_features_from_stac(r, depth)
-        return predict_score(features)["score"]
-
-    df["physics_score"] = df.apply(apply_ranker, axis=1)
+    df["physics_score"] = df.apply(lambda r: calculate_physics_score(r, depth), axis=1)
 
     # Drift monitoring: batch-end summary (shadow mode, best-effort)
     if _has_drift:

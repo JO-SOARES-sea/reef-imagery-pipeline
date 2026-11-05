@@ -15,11 +15,7 @@ Fluxo Científico:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import os
-import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -30,17 +26,19 @@ import rasterio
 from dotenv import load_dotenv
 
 from src.analysis.features import extract_morpho_spectral_features, resample_emodnet_screen
-from src.analysis.gemini_analyzer import JEV_DECISION_LABELS, interpret_reef_noul
+from src.analysis.gemini_analyzer import JEV_DECISION_LABELS, ask_reef_noul
 from src.analysis.reef_segmenter import (
     ReefClassifier,
     compute_reef_probability_map,
+    collect_zone_samples,
     evaluate_against_background,
     extract_candidate_reefs,
+    evaluate_physical_rule,
+    leave_one_zone_out,
     train_multi_zone_classifier,
 )
 from src.ingestion.sentinel_reader import (
     build_clean_water_mask,
-    calculate_ndwi,
     read_sentinel_bands,
     save_geotiff,
 )
@@ -92,8 +90,8 @@ ZONE_CONFIGS = {
         "name": "Recifes de Quarteira / Vilamoura / Garrão",
         "scene_path": PROJECT_ROOT / "data" / "raw" / "quarteira_sample.tif",
         "emodnet_path": PROJECT_ROOT / "data" / "processed" / "EMODnet_batimetria_Quarteira.tif",
-        "ground_truth_path": PROJECT_ROOT / "data" / "vector" / "quarteira_coordenadas.csv",
-        "ground_truth_type": "quarteira",
+        "ground_truth_path": PROJECT_ROOT / "data" / "vector" / "quarteira_cosmo_rocha.csv",  # COSMO LTHQUGA1 (build_cosmo_truth_points.py)
+        "ground_truth_type": "cosmo",
         "out_proba_tif": PROJECT_ROOT / "outputs" / "classifications" / "quarteira_reef_proba.tif",
         "out_candidates_geojson": PROJECT_ROOT / "outputs" / "classifications" / "quarteira_candidates.geojson",
         "out_report_csv": PROJECT_ROOT / "data" / "reports" / "quarteira_validation.csv",
@@ -104,30 +102,15 @@ ZONE_CONFIGS = {
 
 
 def verify_with_typesafe(state_description: str, question_text: str | None = None) -> dict:
-    """Valida um aglomerado de recife com o TypeSafe Jev."""
-    api_key = os.getenv("TYPESAFE_API_KEY")
-    if not api_key:
-        logger.warning("TYPESAFE_API_KEY ausente; validação Jev não executada.")
-        return {**interpret_reef_noul(None), "latency_ms": None}
-
-    from typesafe_sdk import Noul, TypeSafeClient
-
+    """Valida a zona com o TypeSafe Jev (timeout + retry; falhas dão "não executado", não "não")."""
     q_text = question_text or (
         "Com base nos dados instrumentais e na separação estatística face ao fundo arenoso, "
-        "este candidato corresponde a um recife marinho natural comprovado?"
+        "este candidato corresponde a um recife marinho natural?"
     )
-
-    questions = {"is_natural_reef": Noul(instructions=q_text)}
-
-    t0 = time.perf_counter()
-    with TypeSafeClient(api_key=api_key) as client:
-        result = client.system_one(state=state_description, questions=questions, model="jev-latest")
-    latency_ms = (time.perf_counter() - t0) * 1000
-
-    return {
-        **interpret_reef_noul(result.nouls["is_natural_reef"].noul),
-        "latency_ms": round(latency_ms, 1),
-    }
+    result = ask_reef_noul(state_description, q_text)
+    if result["error"]:
+        logger.warning(f"Validação Jev não executada: {result['error']}")
+    return result
 
 
 def run_zone_pipeline(
@@ -137,6 +120,8 @@ def run_zone_pipeline(
     mode: str = "supervised",
     no_jev: bool = False,
     min_auc_jev: float = 0.65,
+    lozo: dict[str, Any] | None = None,
+    min_gain_over_depth: float = 0.05,
 ) -> dict[str, Any]:
     print("\n" + "=" * 80)
     print(f" PIPELINE DE DETEÇÃO DE RECIFES: {cfg['name'].upper()}")
@@ -175,7 +160,7 @@ def run_zone_pipeline(
 
     # 5. Segmentação Vetorial de Candidatos
     logger.info("Passo 5/6: Segmentando aglomerados de recifes rochosos...")
-    threshold_polygon = 0.50 if mode == "supervised" else 0.45
+    threshold_polygon = 0.45 if mode == "absolute" else 0.50
     gdf_candidates = extract_candidate_reefs(reef_proba, scene.profile, threshold=threshold_polygon, min_area_m2=500.0)
 
     if not gdf_candidates.empty:
@@ -186,12 +171,8 @@ def run_zone_pipeline(
     # 6. Validação Cruzada com Ground Truth e Fundo Arenoso
     logger.info("Passo 6/6: Validando deteções contra Ground Truth e 2000 pontos aleatórios de fundo...")
     df_gt = pd.read_csv(cfg["ground_truth_path"])
-    dive_csv = PROJECT_ROOT / "data" / "vector" / "algarve_dive_sites.csv"
-    if dive_csv.exists():
-        df_dive = pd.read_csv(dive_csv)
-        df_gt = pd.concat([df_gt, df_dive], ignore_index=True)
-        df_gt = df_gt.drop_duplicates(subset=["lat", "lon"], keep="first")
-
+    # Sítios de mergulho (algarve_dive_sites.csv) NÃO entram na verdade: só 1 de 14 cai na área de Teixeira e a
+    # >1 km da rocha (ledger E027). Ficam como pistas para a sonda.
     gdf_gt = gpd.GeoDataFrame(
         df_gt,
         geometry=gpd.points_from_xy(df_gt.lon, df_gt.lat),
@@ -228,7 +209,7 @@ def run_zone_pipeline(
                     item["tipo"] = row.get("tipo", "ground_truth")
                 elif "cume_id" in row:
                     item["nome"] = f"Cume_{int(row.get('cume_id', idx))}"
-                    item["tipo"] = "ccmar_multibeam"
+                    item["tipo"] = "cosmo_lidar" if cfg.get("ground_truth_type") == "cosmo" else "ccmar_multibeam"
                 else:
                     item["nome"] = f"Ponto_{idx}"
                     item["tipo"] = "ground_truth"
@@ -274,6 +255,12 @@ def run_zone_pipeline(
     cand_area_ha = float(gdf_candidates["area_m2"].sum() / 10000.0) if not gdf_candidates.empty else 0.0
     cand_pct = (cand_area_ha * 10000.0 / (total_sea_px * 100.0)) * 100.0 if total_sea_px > 0 else 0.0
 
+    # Ganho do detetor sobre um modelo só de profundidade, ambos leave-one-zone-out
+    # O gate usa o limite inferior do IC 95%: com poucos cumes um ganho pontual pode ser só ruído
+    depth_gain = None
+    if lozo and lozo.get("gain_ci95") is not None and np.isfinite(lozo["gain_ci95"][0]):
+        depth_gain = float(lozo["gain_ci95"][0])
+
     if no_jev:
         logger.info("TypeSafe Jev desativado pelo utilizador (--no-jev).")
         jev_result = {
@@ -282,6 +269,33 @@ def run_zone_pipeline(
             "confidence": None,
             "latency_ms": None,
             "reason": "Desativado por opção do utilizador (--no-jev)",
+        }
+    elif mode != "absolute" and depth_gain is None:
+        # Falha fechada: sem evidência de ganho sobre a profundidade (sem GT, uma só classe ou uma só zona)
+        # o confundimento com a profundidade não foi excluído, logo o Jev não é chamado.
+        logger.warning("Sem IC do ganho sobre um modelo só de profundidade: TypeSafe Jev omitido (gate falha fechado).")
+        jev_result = {
+            "decision": "INCONCLUSIVE_NO_DEPTH_EVIDENCE",
+            "p_reef": None,
+            "confidence": None,
+            "latency_ms": None,
+            "reason": "Sem validação leave-one-zone-out utilizável (GT ou zonas insuficientes): confundimento com a profundidade não excluído",
+        }
+    elif depth_gain is not None and depth_gain < min_gain_over_depth:
+        logger.warning(
+            f"Limite inferior do IC 95% do ganho sobre um modelo só de profundidade: {depth_gain:+.3f}. "
+            "TypeSafe Jev omitido: o detetor reconhece a profundidade típica dos cumes, não o recife."
+        )
+        jev_result = {
+            "decision": "INCONCLUSIVE_DEPTH_CONFOUND",
+            "p_reef": None,
+            "confidence": None,
+            "latency_ms": None,
+            "reason": (
+                f"AUC do detetor ({lozo['auc']:.3f}) não supera a de um modelo só de profundidade "
+                f"({lozo['auc_depth_only']:.3f}) com confiança: IC 95% do ganho "
+                f"[{lozo['gain_ci95'][0]:+.3f}, {lozo['gain_ci95'][1]:+.3f}], mínimo exigido {min_gain_over_depth}"
+            ),
         }
     elif auc_exact < min_auc_jev:
         logger.warning(
@@ -302,7 +316,7 @@ def run_zone_pipeline(
             f"Métricas Quantitativas Medidas:\n"
             f"• Discriminação ROC-AUC (GT exato vs Fundo arenoso): {auc_exact:.3f} (Mann-Whitney p={p_val:.2e}).\n"
             f"• Contraste Mediano: GT={bg_eval['gt_median']:.3f} vs Fundo={bg_eval['bg_median']:.3f} (delta={delta_contrast:+.3f}).\n"
-            f"• Taxa de Deteção no Ground Truth a FPR 5%: {bg_eval['recall_fpr5']*100:.1f}% ({int(round(bg_eval['recall_fpr5']*len(gdf_gt)))}/{len(gdf_gt)} cumes).\n"
+            f"• Taxa de Deteção no Ground Truth a FPR 5%: {bg_eval['recall_fpr5']*100:.1f}% ({int(round(bg_eval['recall_fpr5'] * bg_eval['n_gt']))}/{bg_eval['n_gt']} cumes).\n"
             f"• Profundidade Média dos Cumes: {mean_depth:.1f} m (faixa batimétrica EMODnet: {cfg['target_depth_str']}).\n"
             f"• Rugosidade 3D (VRM mediano no GT): {med_vrm:.6f}.\n"
             f"• Relevo de Cume (BPI mediano no GT): {med_bpi:+.3f} m.\n"
@@ -330,9 +344,20 @@ def run_zone_pipeline(
     print(f" Probabilidade Mediana no GT   : {bg_eval['gt_median']*100:.1f}%")
     print(f" Probabilidade Mediana no Fundo: {bg_eval['bg_median']*100:.1f}%")
     print(f" Contraste Líquido (Delta)     : {delta_contrast*100:+.1f}%")
-    print(f" Recall a FPR 5% (p >= {fpr5_cut:.3f}): {bg_eval['recall_fpr5']*100:.1f}% ({int(round(bg_eval['recall_fpr5']*len(gdf_gt)))}/{len(gdf_gt)} cumes)")
+    print(f" Recall a FPR 5% (p >= {fpr5_cut:.3f}): {bg_eval['recall_fpr5']*100:.1f}% ({int(round(bg_eval['recall_fpr5'] * bg_eval['n_gt']))}/{bg_eval['n_gt']} cumes)")
     print(f" Recall a FPR 10%              : {bg_eval['recall_fpr10']*100:.1f}%")
     print(f" [Registo Histórico] AUC 3x3 Max: {bg_eval['auc_3x3_max']:.3f} (inflação por máximo local)")
+    if lozo and lozo.get("auc") is not None:
+        print("-" * 80)
+        if mode == "physical":
+            print(" VALIDAÇÃO DA REGRA FÍSICA (sem treino; fundo à mesma profundidade ±1 m):")
+        else:
+            print(" VALIDAÇÃO LEAVE-ONE-ZONE-OUT (modelo nunca viu esta zona):")
+        print(f" AUC do Detetor                : {lozo['auc']:.3f} ({lozo['n_gt']} GT vs {lozo['n_bg']} fundo)")
+        print(f" AUC Só Profundidade (EMODnet) : {lozo['auc_depth_only']:.3f}")
+        lo, hi = lozo["gain_ci95"]
+        print(f" Ganho sobre a Profundidade    : {lozo['gain']:+.3f} (IC 95%: [{lo:+.3f}, {hi:+.3f}])")
+        print(f" Gate do Jev (IC inferior >= {min_gain_over_depth}): {'PASSA' if lo >= min_gain_over_depth else 'FALHA'}")
     print("-" * 80)
     print(" VALIDAÇÃO COGNITIVA (TYPESAFE JEV):")
     if jev_result["decision"] in JEV_DECISION_LABELS:
@@ -343,8 +368,11 @@ def run_zone_pipeline(
         print(f" P(recife natural)             : {jev_result['p_reef'] * 100:.1f}%")
         print(f" Confiança |2p−1|              : {jev_result['confidence'] * 100:.1f}%")
         print(f" Latência de Decisão do Jev    : {jev_result['latency_ms']} ms")
+        print(f" Modelo que Respondeu          : {jev_result.get('model')}")
     elif "reason" in jev_result:
         print(f" Estado / Motivo               : {jev_result['reason']}")
+    elif jev_result.get("error"):
+        print(f" Estado / Motivo               : {jev_result['error']}")
     print("=" * 80)
     print(f" Ficheiro Ráster de Probabilidade: {cfg['out_proba_tif'].relative_to(PROJECT_ROOT)}")
     print(f" Ficheiro Vetorial de Polígonos  : {cfg['out_candidates_geojson'].relative_to(PROJECT_ROOT)}")
@@ -357,6 +385,7 @@ def run_zone_pipeline(
         "p_val": p_val,
         "delta": delta_contrast,
         "bg_eval": bg_eval,
+        "lozo": lozo,
         "jev_result": jev_result,
     }
 
@@ -371,9 +400,12 @@ def main():
     )
     parser.add_argument(
         "--mode",
-        choices=["supervised", "absolute"],
-        default="supervised",
-        help="Modo do detetor: 'supervised' (Random Forest treinado no Ground Truth) ou 'absolute' (limiares físicos).",
+        choices=["physical", "supervised", "absolute"],
+        default="physical",
+        help=(
+            "Modo do detetor: 'physical' (anomalia de escurecimento à mesma profundidade, sem treino — padrão), "
+            "'supervised' (Random Forest, avaliado leave-one-zone-out) ou 'absolute' (limiares fixos legados)."
+        ),
     )
     parser.add_argument(
         "--no-jev",
@@ -386,23 +418,61 @@ def main():
         default=0.65,
         help="ROC-AUC exato mínimo necessário para acionar validação no TypeSafe Jev (padrão: 0.65).",
     )
+    parser.add_argument(
+        "--imagery",
+        choices=["auto", "sample", "composite"],
+        default="auto",
+        help=(
+            "Imagem de entrada: 'composite' (mediana de dias com água límpida, gerada por "
+            "scripts/build_clear_water_composite.py), 'sample' (cena única) ou 'auto' (composição quando existe)."
+        ),
+    )
     args = parser.parse_args()
-
-    classifier = None
-    if args.mode == "supervised":
-        logger.info("Inicializando treino do ReefClassifier supervisionado multizona...")
-        classifier, train_metrics = train_multi_zone_classifier(ZONE_CONFIGS)
-        logger.info(
-            f"ReefClassifier pronto: {train_metrics['n_gt']} GT cumes + {train_metrics['n_bg']} fundo | "
-            f"5-Fold CV AUC: {train_metrics['cv_auc_oof']:.3f}"
-        )
 
     zones_to_run = list(ZONE_CONFIGS.keys()) if args.zone == "all" else [args.zone]
 
+    if args.imagery != "sample":
+        for z_key in zones_to_run:
+            cfg = ZONE_CONFIGS[z_key]
+            scene = cfg["scene_path"]
+            if not scene.name.endswith("_sample.tif"):
+                parser.error(f"{z_key}: nome de cena inesperado ({scene.name}); esperado '*_sample.tif'")
+            comp = scene.with_name(scene.name[: -len("_sample.tif")] + "_composite.tif")
+            if not comp.exists():
+                if args.imagery == "composite":
+                    parser.error(f"Composição em falta para {z_key}: {comp} — corra scripts/build_clear_water_composite.py")
+                logger.warning(
+                    f"{z_key}: sem composição de dias límpidos; a usar a cena única (sujeita a esteiras e glint). "
+                    "Gere-a com scripts/build_clear_water_composite.py"
+                )
+                continue
+            cfg["scene_path"] = comp
+            for key in ("out_proba_tif", "out_candidates_geojson", "out_report_csv"):
+                cfg[key] = cfg[key].with_name(cfg[key].stem + "_composite" + cfg[key].suffix)
+
+    samples, lozo_results = None, {}
+    if args.mode == "supervised":
+        logger.info("Recolhendo amostras multizona e validando leave-one-zone-out...")
+        samples = collect_zone_samples(ZONE_CONFIGS)
+        lozo_results = leave_one_zone_out(samples)
+    elif args.mode == "physical":
+        logger.info("Avaliando a regra física contra fundo à mesma profundidade (sem treino)...")
+        zone_samples = collect_zone_samples({z: ZONE_CONFIGS[z] for z in zones_to_run})
+        lozo_results = {z: evaluate_physical_rule(zone_samples[z]) for z in zones_to_run}
+
     for z_key in zones_to_run:
+        classifier = None
+        if samples is not None:
+            # Modelo treinado SEM esta zona: as métricas da zona ficam out-of-sample
+            classifier, train_metrics = train_multi_zone_classifier(ZONE_CONFIGS, exclude_zones=[z_key], samples=samples)
+            logger.info(
+                f"ReefClassifier para {z_key} (treino: {', '.join(train_metrics['train_zones'])}): "
+                f"{train_metrics['n_gt']} GT + {train_metrics['n_bg']} fundo"
+            )
         run_zone_pipeline(
             z_key,
             ZONE_CONFIGS[z_key],
+            lozo=lozo_results.get(z_key),
             classifier=classifier,
             mode=args.mode,
             no_jev=args.no_jev,

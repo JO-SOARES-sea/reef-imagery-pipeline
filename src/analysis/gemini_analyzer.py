@@ -11,12 +11,9 @@ Integra:
 from __future__ import annotations
 
 import io
-import json
 import logging
 import os
-import sys
 import time
-from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -156,12 +153,62 @@ def describe_patch_with_gemini(
         return describe_patch_with_gemini(image, metadata, api_key=None)
 
 
+def ask_reef_noul(
+    state: Any,
+    instructions: str,
+    api_key: str | None = None,
+    timeout_s: float = 15.0,
+    max_retries: int = 2,
+) -> dict[str, Any]:
+    """
+    Pergunta ao TypeSafe Jev o Noul "is_natural_reef" com timeout e retry, sem nunca levantar exceção.
+
+    Devolve :func:`interpret_reef_noul` + ``latency_ms`` + ``model`` (modelo concreto que respondeu:
+    ``jev-latest`` é um alias, e para reprodutibilidade regista-se o nome real). Falta de chave,
+    SDK ausente ou falha de rede dão ``decision="nao_executado"`` com o motivo em ``error`` —
+    nunca um "não" falso que interrompa o pipeline.
+    """
+    api_key = api_key or os.getenv("TYPESAFE_API_KEY")
+    if not api_key:
+        return {**interpret_reef_noul(None), "latency_ms": None, "model": None, "error": "TYPESAFE_API_KEY ausente"}
+
+    try:
+        from typesafe_sdk import Noul, RetryPolicy, TypeSafeClient
+    except ImportError as exc:
+        return {
+            **interpret_reef_noul(None),
+            "latency_ms": None,
+            "model": None,
+            "error": f"typesafe-sdk ausente ou incompatível (requer RetryPolicy, >=0.7.5): {exc}",
+        }
+
+    t0 = time.perf_counter()
+    try:
+        with TypeSafeClient(api_key=api_key, timeout=timeout_s, retry=RetryPolicy(max_retries=max_retries)) as client:
+            result = client.system_one(
+                state=state,
+                questions={"is_natural_reef": Noul(instructions=instructions)},
+                model="jev-latest",
+            )
+    except Exception as exc:
+        logger.warning(f"Chamada ao TypeSafe Jev falhou ({exc.__class__.__name__}: {exc}); validação não executada.")
+        return {**interpret_reef_noul(None), "latency_ms": None, "model": None, "error": f"{exc.__class__.__name__}: {exc}"}
+
+    latency_ms = (time.perf_counter() - t0) * 1000
+    return {
+        **interpret_reef_noul(result.nouls["is_natural_reef"].noul),
+        "latency_ms": round(latency_ms, 1),
+        "model": result.model,
+        "error": None,
+    }
+
+
 def route_and_validate_with_jev(
     state_description: str,
     api_key: str | None = None,
 ) -> dict[str, Any]:
     """
-    Roteia a descrição do Gemini para o TypeSafe Jev 1.14 para obter a decisão binária em milissegundos.
+    Roteia a descrição do Gemini para o TypeSafe Jev e devolve a decisão em três faixas.
     """
     api_key = api_key or os.getenv("TYPESAFE_API_KEY")
     if not api_key:
@@ -172,23 +219,10 @@ def route_and_validate_with_jev(
     if not api_key:
         raise ValueError("TYPESAFE_API_KEY é obrigatória para executar a validação Jev.")
 
-    from typesafe_sdk import Noul, TypeSafeClient
-
-    questions = {
-        "is_natural_reef": Noul(
-            instructions=(
-                "Com base na descrição de reflectância, rugosidade tridimensional e contexto subaquático, "
-                "o alvo analisado corresponde com certeza a um recife marinho natural?"
-            )
-        )
-    }
-
-    t0 = time.perf_counter()
-    with TypeSafeClient(api_key=api_key) as client:
-        result = client.system_one(state=state_description, questions=questions, model="jev-latest")
-    latency_ms = (time.perf_counter() - t0) * 1000
-
-    return {
-        **interpret_reef_noul(result.nouls["is_natural_reef"].noul),
-        "latency_ms": round(latency_ms, 1),
-    }
+    # Sem "com certeza": a incerteza já é expressa pela própria probabilidade do Noul
+    return ask_reef_noul(
+        state_description,
+        "Com base na descrição de reflectância, rugosidade tridimensional e contexto subaquático, "
+        "o alvo analisado é um recife marinho natural?",
+        api_key=api_key,
+    )

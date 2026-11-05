@@ -58,6 +58,8 @@ from rasterio.transform import rowcol, xy
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.analysis.features import estimate_lyzenga_attenuation_ratio as _attenuation_ratio  # noqa: E402
+
 from src import band_registry  # noqa: E402
 from src.s2_grid import WindowOutsideRaster, bbox_window, unsigned_href  # noqa: E402
 from src.s2_radiometry import (  # noqa: E402
@@ -400,22 +402,6 @@ def water_mask(bands: dict, depth: np.ndarray | None = None,
         m = m & np.isfinite(depth) & (depth >= DEPTH_DEEP) & (depth <= DEPTH_SHALLOW)
     return m
 
-
-def _attenuation_ratio(xi: np.ndarray, xj: np.ndarray) -> float:
-    """
-    Lyzenga (1978) automatic estimate of the attenuation-coefficient ratio
-    k_i/k_j from the variance and covariance of the log-transformed bands:
-
-        a       = (var(Xi) - var(Xj)) / (2·cov(Xi, Xj))
-        k_i/k_j = a + sqrt(a² + 1)
-    """
-    vi = np.var(xi)
-    vj = np.var(xj)
-    cov = np.mean((xi - xi.mean()) * (xj - xj.mean()))
-    if abs(cov) < 1e-9:
-        return 1.0
-    a = (vi - vj) / (2.0 * cov)
-    return float(a + np.sqrt(a * a + 1.0))
 
 
 def compute_dii(scene: dict, depth: np.ndarray | None = None) -> dict:

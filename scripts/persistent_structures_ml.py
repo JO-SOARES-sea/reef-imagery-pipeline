@@ -36,7 +36,6 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from pyproj import Transformer
-from rasterio.features import rasterize
 from rasterio.transform import from_origin
 from scipy import ndimage as ndi
 from shapely.geometry import LineString, Point, shape
@@ -54,6 +53,7 @@ ZONES_PY = UV / "reports" / "2026-09-27_ilha_faro_13m" / "zones.py"
 TEIXEIRA = PROJECT_ROOT / "data" / "external" / "eia3587" / "fig20_teixeira2025_layers.geojson"
 VALADO_CUMES = PROJECT_ROOT / "data" / "vector" / "valado_cumes_ccmar.csv"
 OUT_DIR = PROJECT_ROOT / "data" / "external" / "persistent_structures"
+OLEX_GT = OUT_DIR / "olex_ground_truth_reefs.geojson"
 CRS = "EPSG:32629"
 
 # Rocha confirmada por fonte independente do satélite (lat, lon). Linhas: lista de vértices.
@@ -95,6 +95,27 @@ def reference_geometries() -> dict[str, gpd.GeoDataFrame]:
     cumes = pd.read_csv(VALADO_CUMES)
     for _, r in cumes.iterrows():
         rows.append({"source": "valado_cumes_ccmar", "geometry": Point(_to_utm(r.lat, r.lon)).buffer(50)})
+
+    if OLEX_GT.is_file():
+        # Falha fechada: sem is_holdout os cumes pré-registados contaminariam o treino; sem CRS/ficheiro legível
+        # os resultados mudariam em silêncio. Em ambos os casos aborta em vez de seguir sem referências.
+        try:
+            ogdf = gpd.read_file(OLEX_GT)
+        except Exception as exc:
+            raise RuntimeError(f"Olex ground truth ilegível ({OLEX_GT}): {exc}") from exc
+        if "is_holdout" not in ogdf.columns:
+            raise RuntimeError(f"{OLEX_GT} não tem a coluna 'is_holdout': regenere-a (extract_olex_soundings.py / filter_olex_0_20m.py)")
+        if ogdf.crs is not None and ogdf.crs.to_epsg() != 4326:
+            ogdf = ogdf.to_crs(4326)
+        ogdf = ogdf[~ogdf["is_holdout"].astype(bool)]
+        hard_pos = ogdf[ogdf["ground_truth_class"] == "CONFIRMED_HARD_POSITIVE"]
+        for _, r in hard_pos.iterrows():
+            geom = r.geometry
+            if geom is not None and not geom.is_empty:
+                xu, yu = _to_utm(geom.y, geom.x)
+                rows.append({"source": f"olex_{r.get('symbol', 'cume')}", "geometry": Point(xu, yu).buffer(50)})
+        logger.info(f"Loaded {len(hard_pos):,} confirmed Olex reef summits into ground truth references")
+
     confirmed = gpd.GeoDataFrame(rows, crs=CRS)
 
     lith = gpd.read_file(TEIXEIRA).to_crs(CRS)
@@ -235,7 +256,8 @@ def main() -> None:
     m_tx = model().fit(Xt, yt)
     S["p_rock_teixeira_only"] = m_tx.predict_proba(X)[:, 1]
     transfer = {}
-    for src in ("greta_crista_sonda_rui", "zimbral_sonda_rui_DL022", "santa_eulalia_terreno_DL020", "valado_cumes_ccmar"):
+    independent_sources = [s for s in S.label_source.dropna().unique() if not s.startswith("teixeira")]
+    for src in independent_sources:
         sel = S.label_source == src
         if not sel.any():
             transfer[src] = "sem estruturas persistentes sobre a referência"; continue
