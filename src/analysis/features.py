@@ -82,6 +82,79 @@ def compute_psdb(blue: np.ndarray, green: np.ndarray) -> np.ndarray:
     return np.where(invalid, np.nan, out).astype(np.float32)
 
 
+def estimate_lyzenga_attenuation_ratio(xi: np.ndarray, xj: np.ndarray) -> float:
+    """
+    Estimativa automática do rácio de coeficientes de atenuação k_i/k_j (Lyzenga, 1978)
+    a partir da variância e covariância das bandas transformadas logaritmicamente:
+
+        a       = (var(Xi) - var(Xj)) / (2 * cov(Xi, Xj))
+        k_i/k_j = a + sqrt(a^2 + 1)
+    """
+    vi = float(np.var(xi))
+    vj = float(np.var(xj))
+    cov = float(np.mean((xi - xi.mean()) * (xj - xj.mean())))
+    if abs(cov) < 1e-9:
+        return 1.0
+    a = (vi - vj) / (2.0 * cov)
+    return float(a + np.sqrt(a * a + 1.0))
+
+
+def compute_lyzenga_dii(
+    blue: np.ndarray,
+    green: np.ndarray,
+    water_mask: np.ndarray | None = None,
+    shallow_mask: np.ndarray | None = None,
+    min_pixels: int = 20,
+    return_details: bool = False,
+) -> np.ndarray | dict[str, Any]:
+    """
+    Calcula o Depth-Invariant Index (DII) de Lyzenga (1978, 1981) entre B02 (Azul) e B03 (Verde):
+        X_i = ln(R_i - R_inf,i)
+        DII = X_blue - (k_blue / k_green) * X_green
+    """
+    valid_water = np.isfinite(blue) & np.isfinite(green) & (blue > 0) & (green > 0)
+    if water_mask is not None:
+        valid_water &= water_mask.astype(bool)
+
+    dii = np.full(blue.shape, np.nan, dtype=np.float32)
+    if not np.any(valid_water):
+        if return_details:
+            return {"dii": dii, "mask": valid_water, "lsw": {"blue": np.nan, "green": np.nan}, "k_ratio": 1.0}
+        return dii
+
+    lsw_blue = float(np.percentile(blue[valid_water], 1))
+    lsw_green = float(np.percentile(green[valid_water], 1))
+
+    target_mask = valid_water.copy()
+    if shallow_mask is not None:
+        target_mask &= shallow_mask.astype(bool)
+
+    eps = 1e-6
+    db = blue - lsw_blue
+    dg = green - lsw_green
+    ok = target_mask & (db > eps) & (dg > eps)
+
+    x_blue = np.full(blue.shape, np.nan, dtype=np.float64)
+    x_green = np.full(green.shape, np.nan, dtype=np.float64)
+    x_blue[ok] = np.log(db[ok])
+    x_green[ok] = np.log(dg[ok])
+
+    if int(np.sum(ok)) >= min_pixels:
+        k_ratio = estimate_lyzenga_attenuation_ratio(x_blue[ok], x_green[ok])
+    else:
+        k_ratio = 1.0
+
+    dii[ok] = (x_blue[ok] - k_ratio * x_green[ok]).astype(np.float32)
+    if return_details:
+        return {
+            "dii": dii,
+            "mask": ok,
+            "lsw": {"blue": lsw_blue, "green": lsw_green},
+            "k_ratio": k_ratio,
+        }
+    return dii
+
+
 def compute_slope(depth_proxy: np.ndarray) -> np.ndarray:
     """Calcula a magnitude do declive do relevo submarino a partir do gradiente de Sobel."""
     gx, gy = _sobel(depth_proxy)
@@ -290,6 +363,13 @@ def extract_morpho_spectral_features(
     psdb = compute_psdb(b2, b3)
     sdb_m = calibrate_sdb_depth(psdb, depth_emodnet=depth_emodnet, water_mask=water_mask)
 
+    # Anomalia de escurecimento: à mesma profundidade, rocha com macroalgas é mais escura que areia,
+    # pelo que a SDB ótica "vê" o fundo mais profundo do que a batimetria instrumental (> 0 = escuro).
+    if depth_emodnet is not None:
+        sdb_anomaly_m = (sdb_m - depth_emodnet).astype(np.float32)
+    else:
+        sdb_anomaly_m = np.full_like(sdb_m, np.nan, dtype=np.float32)
+
     # Métricas derivadas em metros (evitam desvanecimento por gradientes infinitesimais)
     sdb_slope = compute_slope(sdb_m)
     sdb_bpi100 = compute_bpi(sdb_m, r_in=5, r_out=10)   # 50 m a 100 m
@@ -318,7 +398,9 @@ def extract_morpho_spectral_features(
     with np.errstate(invalid="ignore", divide="ignore"):
         r_b03_b02 = np.where((b2 > 0.001) & np.isfinite(b2), b3 / b2, np.nan)
         r_b04_b03 = np.where((b3 > 0.001) & np.isfinite(b3), b4 / b3, np.nan)
-        gr_ratio = np.where((b4 > 0.005) & np.isfinite(b4), b3 / b4, np.nan)
+        # Em água límpida o vermelho é absorvido em poucos metros: B04 ~ 0 é físico, não inválido.
+        # Limita o denominador em vez de devolver NaN (que descartava quase toda a água límpida).
+        gr_ratio = np.where(np.isfinite(b4) & np.isfinite(b3), b3 / np.maximum(b4, 0.005), np.nan)
         r_b08_b04 = np.where((b4 > 0.001) & np.isfinite(b4) & (b8 is not None), (b8 if b8 is not None else 0.0) / b4, np.nan)
 
     # 4. Z-Score Relative Features (M5_relative arm de UnderwaterVisibility)
@@ -338,13 +420,16 @@ def extract_morpho_spectral_features(
 
     z_b02_b03 = _zscore_water(psdb)
     z_b03_b04 = _zscore_water(r_b04_b03)
+    lyzenga_dii = compute_lyzenga_dii(b2, b3, water_mask=water_mask)
 
     features = {
         "B02": b2,
         "B03": b3,
         "B04": b4,
         "psdb": psdb,
+        "lyzenga_dii": lyzenga_dii,
         "sdb_m": sdb_m,
+        "sdb_anomaly_m": sdb_anomaly_m,
         "sdb_slope": sdb_slope,
         "sdb_bpi100": sdb_bpi100,
         "sdb_bpi200": sdb_bpi200,
